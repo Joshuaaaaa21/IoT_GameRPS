@@ -17,11 +17,10 @@ from src.engine.game_engine import Choice
 class TestSensorGesture(unittest.TestCase):
     def setUp(self) -> None:
         self.config = GestureConfig(
-            accel_threshold=6.5,
+            accel_threshold=5.0,
             settle_threshold=2.5,
             debounce_seconds=1.2,
-            require_gyro=True,
-            gyro_min_magnitude=0.8,
+            require_gyro=False,
         )
         self.classifier = GestureClassifier(config=self.config)
         stationary = [
@@ -38,7 +37,6 @@ class TestSensorGesture(unittest.TestCase):
         self.assertTrue(self.classifier.is_calibrated)
 
     def test_extract_features_rms_and_rotation_adapted_from_reference(self) -> None:
-        # 1. Stationary phone -> RMS ~ 0, rotation ~ 0
         still_samples = [
             SensorSample(0.0, 0.0, 9.81, 0.0, 0.0, 0.0, timestamp=i * 0.5)
             for i in range(5)
@@ -47,7 +45,6 @@ class TestSensorGesture(unittest.TestCase):
         self.assertAlmostEqual(still_res.motion_rms, 0.0, places=3)
         self.assertAlmostEqual(still_res.rotation_rad, 0.0, places=3)
 
-        # 2. Moving phone -> RMS > 2.0, rotation > 0.9
         moving_samples = [
             SensorSample(0.0, 0.0, 12.0, 0.5, 0.0, 0.0, timestamp=i * 0.5)
             for i in range(5)
@@ -56,7 +53,6 @@ class TestSensorGesture(unittest.TestCase):
         self.assertGreater(move_res.motion_rms, 2.0)
         self.assertGreater(move_res.rotation_rad, 0.9)
 
-        # 3. Single sample raises ValueError
         with self.assertRaises(ValueError):
             extract_features([SensorSample(0.0, 0.0, 9.81, timestamp=0.0)])
 
@@ -81,36 +77,63 @@ class TestSensorGesture(unittest.TestCase):
             self.assertTrue(vibrate_feedback(200))
             run_mock.assert_called_once()
 
-    def test_left_right_up_classification_and_rebound_protection(self) -> None:
+    def test_still_and_weak_motion_rejected_with_diagnostic_reason(self) -> None:
+        # 1. Stationary stream -> WAITING / STATIONARY
+        for s in TermuxSensorReader.generate_simulated_gesture_stream("STILL", base_time=10.0):
+            res = self.classifier.process_sample(s)
+            self.assertIsNone(res)
+        self.assertEqual(self.classifier.last_diagnostic.status, "WAITING")
+        self.assertIn("STATIONARY", self.classifier.last_diagnostic.reason)
+
+        # 2. Weak motion below threshold -> REJECTED / BELOW_ACCEL_THRESHOLD
+        rejected_seen = False
+        for s in TermuxSensorReader.generate_simulated_gesture_stream("WEAK", base_time=20.0):
+            res = self.classifier.process_sample(s)
+            self.assertIsNone(res)
+            if self.classifier.last_diagnostic.status == "REJECTED":
+                rejected_seen = True
+                self.assertIn("BELOW_ACCEL_THRESHOLD", self.classifier.last_diagnostic.reason)
+        self.assertTrue(rejected_seen)
+
+    def test_left_right_up_classification_and_multi_sample_rebound_protection(self) -> None:
         cases = [
-            ("LEFT", Choice.ROCK),
-            ("RIGHT", Choice.SCISSORS),
-            ("UP", Choice.PAPER),
+            ("LEFT", Choice.ROCK, "-ax"),
+            ("RIGHT", Choice.SCISSORS, "+ax"),
+            ("UP", Choice.PAPER, "+ay"),
         ]
-        for idx, (gesture_name, expected_choice) in enumerate(cases):
+        for idx, (gesture_name, expected_choice, expected_axis) in enumerate(cases):
             with self.subTest(gesture=gesture_name):
                 self.classifier.reset_lock()
                 stream = TermuxSensorReader.generate_simulated_gesture_stream(
                     gesture_name, base_time=10.0 + idx * 10.0
                 )
-                detected = [
-                    res
-                    for sample in stream
-                    if (res := self.classifier.process_sample(sample)) is not None
-                ]
+                detected = []
+                detected_axis = None
+                for sample in stream:
+                    res = self.classifier.process_sample(sample)
+                    if res is not None:
+                        detected.append(res)
+                        detected_axis = self.classifier.last_diagnostic.triggered_axis
+                # Multi-sample peak + rebound must emit EXACTLY ONE choice
                 self.assertEqual(detected, [expected_choice])
+                self.assertEqual(detected_axis, expected_axis)
                 self.assertGreater(self.classifier.last_features.motion_rms, 1.0)
 
-    def test_debounce_blocks_rapid_double_gestures(self) -> None:
+    def test_debounce_blocks_rapid_double_gestures_and_allows_sequential_after_cooldown(self) -> None:
         s1 = SensorSample(-9.0, 0.0, 9.81, 0.0, 2.0, 0.0, timestamp=10.0)
         self.assertEqual(self.classifier.process_sample(s1), Choice.ROCK)
+        self.assertEqual(self.classifier.last_diagnostic.status, "DETECTED")
 
         s_settle = SensorSample(0.0, 0.0, 9.81, 0.0, 0.0, 0.0, timestamp=10.3)
         self.assertIsNone(self.classifier.process_sample(s_settle))
 
+        # Within 1.2s debounce window -> rejected with DEBOUNCE_COOLDOWN
         s2 = SensorSample(9.0, 0.0, 9.81, 0.0, 2.0, 0.0, timestamp=10.6)
         self.assertIsNone(self.classifier.process_sample(s2))
+        self.assertEqual(self.classifier.last_diagnostic.status, "REJECTED")
+        self.assertIn("DEBOUNCE_COOLDOWN", self.classifier.last_diagnostic.reason)
 
+        # After 1.2s cooldown -> next gesture accepted
         self.classifier.process_sample(SensorSample(0.0, 0.0, 9.81, 0.0, 0.0, 0.0, timestamp=11.0))
         s3 = SensorSample(9.0, 0.0, 9.81, 0.0, 2.0, 0.0, timestamp=11.5)
         self.assertEqual(self.classifier.process_sample(s3), Choice.SCISSORS)
@@ -139,8 +162,9 @@ class TestSensorGesture(unittest.TestCase):
             Choice.PAPER,
         )
 
-    def test_parse_termux_json_chunk(self) -> None:
-        raw = """
+    def test_parse_combined_and_split_termux_json_chunks(self) -> None:
+        # 1. Combined JSON chunk
+        raw_combined = """
         {
           "ICM20600 Accelerometer": {
             "values": [-8.4, 0.5, 9.7]
@@ -150,11 +174,28 @@ class TestSensorGesture(unittest.TestCase):
           }
         }
         """
-        sample = TermuxSensorReader.parse_termux_json_chunk(raw)
+        sample = TermuxSensorReader.parse_single_chunk(raw_combined)
         self.assertIsNotNone(sample)
         assert sample is not None
         self.assertAlmostEqual(sample.ax, -8.4)
         self.assertAlmostEqual(sample.gy, 1.9)
+
+        # 2. Split JSON chunks (Gyro arrives first, Accel arrives second)
+        raw_gyro_only = '{"ICM20600 Gyroscope": {"values": [0.4, 2.5, -0.3]}}'
+        raw_accel_only = '{"ICM20600 Accelerometer": {"values": [9.1, -0.2, 9.8]}}'
+
+        s_first, last_acc, last_gyr = TermuxSensorReader.parse_termux_json_chunk(raw_gyro_only)
+        self.assertIsNone(s_first)  # Waiting for first accelerometer reading
+        self.assertEqual(last_gyr, (0.4, 2.5, -0.3))
+
+        s_merged, last_acc, last_gyr = TermuxSensorReader.parse_termux_json_chunk(
+            raw_accel_only, last_accel=last_acc, last_gyro=last_gyr
+        )
+        self.assertIsNotNone(s_merged)
+        assert s_merged is not None
+        # Merged sample preserves the gyro values from the preceding chunk!
+        self.assertAlmostEqual(s_merged.ax, 9.1)
+        self.assertAlmostEqual(s_merged.gy, 2.5)
 
 
 if __name__ == "__main__":

@@ -11,6 +11,17 @@ async function postJSON(url, payload) {
     return res.json();
 }
 
+function fmtVec(arr) {
+    if (!Array.isArray(arr) || arr.length < 3) return "0.00, 0.00, 0.00";
+    return arr.map((v) => Number(v || 0).toFixed(2)).join(", ");
+}
+
+function fmtTime(ts) {
+    if (!ts) return "-";
+    const d = new Date(ts * 1000);
+    return d.toLocaleTimeString("id-ID");
+}
+
 /**
  * Draws a deterministic visual matrix pattern + readable label on canvas for QR pairing
  * without requiring external third-party CDN scripts (works 100% offline).
@@ -40,7 +51,6 @@ function renderPairingMatrix(canvasId, uriText, pairCode) {
     drawFinder(cells - 7, 0);
     drawFinder(0, cells - 7);
 
-    // Deterministic bit pattern from URI string
     ctx.fillStyle = "#000000";
     for (let r = 0; r < cells; r++) {
         for (let c = 0; c < cells; c++) {
@@ -65,11 +75,49 @@ function updatePlayerCard(suffix, playerState, outcomeText, pairingData) {
 
     document.getElementById(`score-${suffix}`).textContent = playerState.score;
 
+    // 1. Round Choice Display
     const choiceDisplay = playerState.choice
         ? playerState.choice
         : (playerState.has_chosen ? "LOCKED (Menunggu Lawan)" : "-");
     document.getElementById(`choice-${suffix}`).textContent = choiceDisplay;
     document.getElementById(`outcome-${suffix}`).textContent = outcomeText || "-";
+
+    // 2. Live Telemetry & Diagnostic Panel
+    const diagStatus = playerState.diag_status || "WAITING";
+    const diagEl = document.getElementById(`diag-status-${suffix}`);
+    if (diagEl) {
+        diagEl.textContent = diagStatus;
+        diagEl.className = "badge " + (
+            diagStatus === "DETECTED" ? "online" : (diagStatus === "REJECTED" ? "warn" : "")
+        );
+    }
+
+    const lastGestEl = document.getElementById(`last-gesture-${suffix}`);
+    if (lastGestEl) lastGestEl.textContent = playerState.last_gesture || "-";
+
+    const axisEl = document.getElementById(`axis-${suffix}`);
+    if (axisEl) axisEl.textContent = playerState.triggered_axis || "-";
+
+    const reasonEl = document.getElementById(`diag-reason-${suffix}`);
+    if (reasonEl) reasonEl.textContent = playerState.diag_reason || "NO_TELEMETRY_YET";
+
+    const accelEl = document.getElementById(`accel-${suffix}`);
+    if (accelEl) accelEl.textContent = fmtVec(playerState.accel);
+
+    const gyroEl = document.getElementById(`gyro-${suffix}`);
+    if (gyroEl) gyroEl.textContent = fmtVec(playerState.gyro);
+
+    const rmsEl = document.getElementById(`rms-${suffix}`);
+    if (rmsEl) rmsEl.textContent = Number(playerState.motion_rms || 0).toFixed(3);
+
+    const rotEl = document.getElementById(`rot-${suffix}`);
+    if (rotEl) rotEl.textContent = Number(playerState.rotation_rad || 0).toFixed(3);
+
+    const seenEl = document.getElementById(`last-seen-${suffix}`);
+    if (seenEl) seenEl.textContent = fmtTime(playerState.last_telemetry_ts);
+
+    const seqEl = document.getElementById(`seq-${suffix}`);
+    if (seqEl) seqEl.textContent = String(playerState.sequence || 0);
 
     if (pairingData) {
         document.getElementById(`qr-uri-${suffix}`).textContent = pairingData.qr_uri;
@@ -88,12 +136,10 @@ async function refreshState() {
         document.getElementById("game-state-display").textContent = data.state;
         document.getElementById("round-id-display").textContent = data.round_id;
 
-        // MQTT status
         const mqttEl = document.getElementById("mqtt-status");
         mqttEl.textContent = data.mqtt.status_text;
         mqttEl.className = "badge " + (data.mqtt.connected ? "online" : "");
 
-        // Error display
         const errEl = document.getElementById("error-banner");
         if (data.error) {
             errEl.hidden = false;
@@ -103,7 +149,6 @@ async function refreshState() {
             errEl.textContent = "";
         }
 
-        // Countdown calculation
         const cdEl = document.getElementById("countdown-display");
         if (data.state === "COUNTDOWN" && data.round_deadline) {
             const rem = Math.max(0, data.round_deadline - data.server_time);
@@ -112,13 +157,11 @@ async function refreshState() {
             cdEl.textContent = "-";
         }
 
-        // Last round result
         const last = data.last_result;
         document.getElementById("round-outcome-display").textContent = last ? last.outcome : "-";
         document.getElementById("winner-name-display").textContent =
             last && last.winner_username ? last.winner_username : (last ? "DRAW / TIDAK ADA" : "-");
 
-        // Sync username inputs only when session changes so typing isn't interrupted
         if (lastSessionId !== data.session_id) {
             document.getElementById("input-username-a").value = data.players.PLAYER_A.username;
             document.getElementById("input-username-b").value = data.players.PLAYER_B.username;

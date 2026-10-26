@@ -1,11 +1,11 @@
-"""End-to-end integration tests for Pairing, EdgeDeviceClient, Dashboard Server, and Full Game Flow."""
+"""End-to-end integration tests for Pairing, EdgeDeviceClient, Live Telemetry, Dashboard Server, and Full Game Flow."""
 
 from http.server import ThreadingHTTPServer
 import json
 import os
 import threading
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from urllib.request import Request, urlopen
 
 from src.edge.edge_client import EdgeDeviceClient
@@ -49,7 +49,6 @@ class TestPairingAndIntegration(unittest.TestCase):
             parse_pairing_input(json.dumps({"session_id": sid, "player_id": "A", "password": "secret"}))
 
     def test_public_browser_config_never_leaks_password(self) -> None:
-        """Verify /config.json security rule adapted from PocketGuard test_dashboard_server.py."""
         with patch.dict(os.environ, {
             "PROJECT_ID": "rps_secret_test",
             "MQTT_HOST": "private.example.com",
@@ -62,6 +61,45 @@ class TestPairingAndIntegration(unittest.TestCase):
             self.assertFalse(cfg["automatic_connection"])
             self.assertNotIn("DO_NOT_LEAK_PASSWORD_123", json.dumps(cfg))
             self.assertNotIn("secret-user", json.dumps(cfg))
+
+    def test_live_telemetry_visible_outside_round_and_session_switch_preserves_mqtt(self) -> None:
+        """
+        Verify root-cause fixes:
+        1. Moving the phone BEFORE pressing START GAME still sends live telemetry (accel, gyro,
+           last_gesture, diag_status/diag_reason) to EngineMQTTBridge without altering game score.
+        2. Switching sessions via `switch_session` re-subscribes the bound MQTT client instead of dropping it.
+        """
+        sid = "live-diag-01"
+        engine = GameEngine(session_id=sid, countdown_seconds=5.0)
+        bridge = EngineMQTTBridge(engine=engine, publish_fn=lambda t, p, q, r: None)
+
+        # Mock a bound MQTT client and verify switch_session keeps it bound and re-subscribes
+        fake_mqtt = MagicMock()
+        bridge._client = fake_mqtt
+        new_engine = GameEngine(session_id="live-diag-02", countdown_seconds=5.0)
+        bridge.switch_session(new_engine)
+        self.assertIs(bridge._client, fake_mqtt)
+        fake_mqtt.unsubscribe.assert_called_once()
+        self.assertEqual(fake_mqtt.subscribe.call_count, 3)
+
+        # Now connect Edge A on "live-diag-02" WITHOUT starting a round
+        def route_to_bridge(topic: str, payload: str, qos: int, retain: bool) -> None:
+            bridge.handle_raw_message(topic, payload)
+
+        token_a = parse_pairing_input("live-diag-02:PLAYER_A")
+        edge_a = EdgeDeviceClient(token=token_a, simulate=True, publish_fn=route_to_bridge)
+        edge_a.classifier.calibrate([SensorSample(0.0, 0.0, 9.81, timestamp=1.0)])
+        edge_a.connect_and_announce()
+
+        # Perform a LEFT gesture while state is still WAITING_FOR_PLAYERS (outside active round)
+        for s in TermuxSensorReader.generate_simulated_gesture_stream("LEFT", base_time=10.0):
+            edge_a.feed_sensor_sample(s)
+
+        snap = bridge.publish_state()
+        p_a = snap["players"][PLAYER_A]
+        self.assertEqual(p_a["last_gesture"], "ROCK")
+        self.assertEqual(p_a["triggered_axis"], "-ax")
+        self.assertEqual(p_a["score"], 0)  # Score must NOT change outside round
 
     def test_full_edge_sensor_to_mqtt_to_engine_integration(self) -> None:
         sid = "integ-session-77"
@@ -79,7 +117,6 @@ class TestPairingAndIntegration(unittest.TestCase):
         bridge = EngineMQTTBridge(engine=engine, publish_fn=engine_publish)
 
         def edge_publish(topic: str, payload: str, qos: int, retain: bool) -> None:
-            # Inject current wall-clock time so `sent_at_ms` freshness check passes
             bridge.handle_raw_message(topic, payload)
 
         token_a = parse_pairing_input(f"{sid}:PLAYER_A")
@@ -96,7 +133,6 @@ class TestPairingAndIntegration(unittest.TestCase):
         edge_b.connect_and_announce()
         self.assertEqual(engine.state, GameState.READY)
 
-        # Disconnect & Reconnect test
         edge_a.virtual_player.send_telemetry(connected=False)
         self.assertEqual(engine.state, GameState.WAITING_FOR_PLAYERS)
         edge_a.connect_and_announce()
@@ -145,7 +181,6 @@ class TestPairingAndIntegration(unittest.TestCase):
                 return json.loads(resp.read().decode("utf-8"))
 
         try:
-            # Verify /config.json endpoint
             pub_cfg = http_get("/config.json")
             self.assertEqual(pub_cfg["session_id"], "web-test-01")
 
@@ -155,6 +190,15 @@ class TestPairingAndIntegration(unittest.TestCase):
 
             http_post("/api/simulate_edge", {"player_id": PLAYER_A, "action": "CONNECT"})
             http_post("/api/simulate_edge", {"player_id": PLAYER_B, "action": "CONNECT"})
+
+            # Test weak gesture diagnostic before starting game
+            weak_res = http_post("/api/simulate_edge", {"player_id": PLAYER_A, "action": "GESTURE", "gesture": "WEAK"})
+            self.assertFalse(weak_res["ok"])
+            self.assertEqual(weak_res["diag_status"], "REJECTED")
+
+            st_weak = http_get("/api/state")
+            self.assertEqual(st_weak["players"][PLAYER_A]["diag_status"], "REJECTED")
+            self.assertIn("BELOW_ACCEL_THRESHOLD", st_weak["players"][PLAYER_A]["diag_reason"])
 
             http_post("/api/command", {"command": "SET_USERNAME", "player_id": PLAYER_B, "username": "Rival"})
             http_post("/api/command", {"command": "START_GAME"})

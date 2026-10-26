@@ -14,7 +14,7 @@ import time
 from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
-from src.edge.sensor_gesture import SensorSample, TermuxSensorReader
+from src.edge.sensor_gesture import GestureClassifier, SensorSample, TermuxSensorReader
 from src.engine.game_engine import GameEngine, PLAYER_A, PLAYER_B
 from src.engine.mqtt_bridge import EngineMQTTBridge
 from src.engine.mqtt_protocol import DEFAULT_HOST, DEFAULT_WS_URL, MQTTConfig, TopicBuilder
@@ -70,8 +70,9 @@ class GameRuntimeContext:
     def create_new_session(self, custom_session_id: Optional[str] = None) -> str:
         with self.lock:
             new_sid = custom_session_id.strip() if custom_session_id else generate_session_id("rps")
-            self.engine = GameEngine(session_id=new_sid, countdown_seconds=self.countdown_seconds)
-            self.bridge = EngineMQTTBridge(engine=self.engine)
+            new_engine = GameEngine(session_id=new_sid, countdown_seconds=self.countdown_seconds)
+            self.engine = new_engine
+            self.bridge.switch_session(new_engine)
             return new_sid
 
     def get_pairing_info(self) -> Dict[str, Any]:
@@ -96,10 +97,7 @@ class GameRuntimeContext:
         with self.lock:
             self.bridge.tick()
             snapshot = self.engine.get_state_snapshot()
-            for pid, feats in self.bridge.last_telemetry_features.items():
-                if pid in snapshot["players"]:
-                    snapshot["players"][pid]["motion_rms"] = feats.get("motion_rms", 0.0)
-                    snapshot["players"][pid]["rotation_rad"] = feats.get("rotation_rad", 0.0)
+            self.bridge._enrich_players_with_telemetry(snapshot)
             snapshot["mqtt"] = {
                 "connected": self.mqtt_connected,
                 "broker_host": self.mqtt_config.host,
@@ -201,6 +199,10 @@ def create_http_handler(ctx: GameRuntimeContext):
                                 "connected": (action == "CONNECT"),
                                 "motion_rms": 0.0,
                                 "rotation_rad": 0.0,
+                                "accel": [0.0, 0.0, 9.81],
+                                "gyro": [0.0, 0.0, 0.0],
+                                "diag_status": "WAITING" if action == "CONNECT" else "OFFLINE",
+                                "diag_reason": "SIMULATED_CONNECT" if action == "CONNECT" else "SIMULATED_DISCONNECT",
                             }),
                         )
                         self._send_json({"ok": ok, "reason": reason})
@@ -208,18 +210,52 @@ def create_http_handler(ctx: GameRuntimeContext):
 
                     if action == "GESTURE":
                         gesture = str(body.get("gesture", "LEFT")).upper()
-                        from src.edge.sensor_gesture import GestureClassifier
                         clf = GestureClassifier()
                         clf.calibrate([SensorSample(0.0, 0.0, 9.81, timestamp=1.0)])
                         detected_choice = None
+                        peak_sample: Optional[SensorSample] = None
+                        peak_diag = clf.last_diagnostic
                         for s in TermuxSensorReader.generate_simulated_gesture_stream(gesture, base_time=10.0):
                             c = clf.process_sample(s)
                             if c is not None:
                                 detected_choice = c.value
-                        if not detected_choice:
-                            self._send_json({"ok": False, "reason": "NO_GESTURE_DETECTED"})
-                            return
+                                peak_sample = s
+                                peak_diag = clf.last_diagnostic
+                            elif peak_sample is None and clf.last_diagnostic.status == "REJECTED":
+                                peak_sample = s
+                                peak_diag = clf.last_diagnostic
+
+                        final_sample = peak_sample or SensorSample(0.0, 0.0, 9.81, timestamp=10.4)
                         feats = clf.last_features
+
+                        # 1. Always publish live telemetry so Dashboard shows sensor & diagnostic state
+                        ctx.bridge.handle_raw_message(
+                            topics.player_telemetry(player_id),
+                            json.dumps({
+                                "session_id": ctx.engine.session_id,
+                                "player_id": player_id,
+                                "connected": True,
+                                "motion_rms": feats.motion_rms,
+                                "rotation_rad": feats.rotation_rad,
+                                "accel": list(final_sample.acceleration),
+                                "gyro": list(final_sample.gyroscope),
+                                "diag_status": peak_diag.status,
+                                "diag_reason": peak_diag.reason,
+                                "last_gesture": detected_choice,
+                                "triggered_axis": peak_diag.triggered_axis,
+                            }),
+                        )
+
+                        if not detected_choice:
+                            self._send_json({
+                                "ok": False,
+                                "reason": peak_diag.reason,
+                                "choice": None,
+                                "diag_status": peak_diag.status,
+                            })
+                            return
+
+                        # 2. Submit choice (if round is active, locks choice; if outside round, updates diagnostic reason)
                         ok, reason = ctx.bridge.handle_raw_message(
                             topics.player_choice(player_id),
                             json.dumps({
@@ -229,6 +265,10 @@ def create_http_handler(ctx: GameRuntimeContext):
                                 "round_id": ctx.engine.round_id,
                                 "motion_rms": feats.motion_rms,
                                 "rotation_rad": feats.rotation_rad,
+                                "accel": list(final_sample.acceleration),
+                                "gyro": list(final_sample.gyroscope),
+                                "triggered_axis": peak_diag.triggered_axis,
+                                "diag_reason": peak_diag.reason,
                             }),
                         )
                         self._send_json({

@@ -100,6 +100,12 @@ body {
     border-color: #c5221f;
 }
 
+.badge.warn {
+    background: #fef7e0;
+    color: #b06000;
+    border-color: #b06000;
+}
+
 .score-display {
     font-size: 1.25rem;
 }
@@ -110,6 +116,30 @@ body {
     margin: 8px 0;
     display: flex;
     justify-content: space-between;
+}
+
+.telemetry-panel {
+    background: #fafafa;
+    border: 1px solid #ddd;
+    padding: 8px 10px;
+    margin: 8px 0;
+    font-size: 0.82rem;
+}
+
+.telemetry-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.diag-row {
+    margin: 3px 0;
+}
+
+.diag-row code {
+    background: #eee;
+    padding: 1px 4px;
 }
 
 .countdown-box {

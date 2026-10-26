@@ -26,8 +26,8 @@ from src.engine.mqtt_protocol import (
 class EngineMQTTBridge:
     """
     Wraps GameEngine and handles incoming/outgoing MQTT messages for a specific session_id.
-    Includes anti-replay sequence validation (boot_id + sequence) and stale timestamp
-    rejection adapted from PocketGuard IoT rules.py.
+    Stores full live telemetry & gesture diagnostic metadata per player so the Dashboard
+    can render real-time sensor readings, classification reasons, and pipeline timestamps.
     """
 
     def __init__(
@@ -41,12 +41,39 @@ class EngineMQTTBridge:
         self._publish_fn = publish_fn or self._default_publish
         self._seen_msg_ids: set[str] = set()
         self._last_seq: Dict[Tuple[str, str], int] = {}
-        self.last_telemetry_features: Dict[str, Dict[str, float]] = {}
+        self.last_telemetry_features: Dict[str, Dict[str, Any]] = {}
         self.last_error: Optional[str] = None
 
     def _default_publish(self, topic: str, payload: str, qos: int, retain: bool) -> None:
         if self._client is not None:
             self._client.publish(topic, payload=payload, qos=qos, retain=retain)
+
+    def switch_session(self, new_engine: GameEngine) -> None:
+        """
+        Safely switch the active session_id and re-subscribe the live MQTT client
+        so creating a new session on the Dashboard never orphans the MQTT connection.
+        """
+        old_topics = self.topics
+        self.engine = new_engine
+        self.topics = TopicBuilder(new_engine.session_id)
+        self._seen_msg_ids.clear()
+        self._last_seq.clear()
+        self.last_telemetry_features.clear()
+        self.last_error = None
+
+        if self._client is not None:
+            try:
+                self._client.unsubscribe([
+                    old_topics.wildcard_all_player_telemetry(),
+                    old_topics.wildcard_all_player_choices(),
+                    old_topics.game_command(),
+                ])
+                self._client.subscribe(self.topics.wildcard_all_player_telemetry(), qos=QOS_TELEMETRY)
+                self._client.subscribe(self.topics.wildcard_all_player_choices(), qos=QOS_CRITICAL)
+                self._client.subscribe(self.topics.game_command(), qos=QOS_CRITICAL)
+            except Exception:
+                pass
+        self.publish_state()
 
     def bind_mqtt_client(self, config: MQTTConfig) -> mqtt.Client:
         """Create and configure a paho-mqtt v2 Client with TLS enforcement, LWT, and auto-reconnect."""
@@ -62,7 +89,6 @@ class EngineMQTTBridge:
             client.tls_set(cert_reqs=ssl.CERT_REQUIRED, tls_version=ssl.PROTOCOL_TLS_CLIENT)
         client.reconnect_delay_set(min_delay=1, max_delay=30)
 
-        # Last Will (LWT): notify dashboard if engine disconnects unexpectedly
         offline_payload = json.dumps({
             "session_id": self.engine.session_id,
             "state": "OFFLINE",
@@ -93,10 +119,7 @@ class EngineMQTTBridge:
         payload: Dict[str, Any],
         now: Optional[float] = None,
     ) -> Tuple[bool, str]:
-        """
-        Validate optional `sent_at_ms` (30s window) and `(boot_id, sequence)` monotonic counter.
-        Adapted from PocketGuard nodes/detector_service/rules.py.
-        """
+        """Validate optional `sent_at_ms` (30s window) and `(boot_id, sequence)` monotonic counter."""
         sent_at_ms = payload.get("sent_at_ms")
         if sent_at_ms is not None:
             if type(sent_at_ms) is not int or sent_at_ms < 0:
@@ -119,13 +142,25 @@ class EngineMQTTBridge:
 
         return True, "OK"
 
+    def _enrich_players_with_telemetry(self, snapshot: Dict[str, Any]) -> None:
+        """Attach live telemetry & diagnostic fields to each player's state snapshot."""
+        for pid, p_dict in snapshot.get("players", {}).items():
+            feats = self.last_telemetry_features.get(pid, {})
+            p_dict["motion_rms"] = feats.get("motion_rms", 0.0)
+            p_dict["rotation_rad"] = feats.get("rotation_rad", 0.0)
+            p_dict["accel"] = feats.get("accel", [0.0, 0.0, 0.0])
+            p_dict["gyro"] = feats.get("gyro", [0.0, 0.0, 0.0])
+            p_dict["diag_status"] = feats.get("diag_status", "WAITING")
+            p_dict["diag_reason"] = feats.get("diag_reason", "NO_TELEMETRY_YET")
+            p_dict["last_gesture"] = feats.get("last_gesture", None)
+            p_dict["triggered_axis"] = feats.get("triggered_axis", None)
+            p_dict["last_telemetry_ts"] = feats.get("last_telemetry_ts", None)
+            p_dict["sequence"] = feats.get("sequence", 0)
+
     def publish_state(self, error_msg: Optional[str] = None) -> Dict[str, Any]:
         """Publish authoritative game state snapshot to motion-rps/{session_id}/game/state."""
         snapshot = self.engine.get_state_snapshot()
-        for pid, feats in self.last_telemetry_features.items():
-            if pid in snapshot["players"]:
-                snapshot["players"][pid]["motion_rms"] = feats.get("motion_rms", 0.0)
-                snapshot["players"][pid]["rotation_rad"] = feats.get("rotation_rad", 0.0)
+        self._enrich_players_with_telemetry(snapshot)
         snapshot["timestamp"] = time.time()
         snapshot["error"] = error_msg
         self.last_error = error_msg
@@ -133,7 +168,7 @@ class EngineMQTTBridge:
             self.topics.game_state(),
             json.dumps(snapshot),
             QOS_CRITICAL,
-            True,  # Retain state so newly connected dashboards get immediate sync
+            True,
         )
         return snapshot
 
@@ -193,14 +228,12 @@ class EngineMQTTBridge:
             self.publish_state(error_msg=err)
             return False, err or "INVALID_JSON"
 
-        # Deduplicate by optional msg_id
         msg_id = payload.get("msg_id")
         if msg_id:
             if msg_id in self._seen_msg_ids:
                 return False, "IGNORED_DUPLICATE_MSG_ID"
             self._seen_msg_ids.add(str(msg_id))
 
-        # Route player topics: motion-rps/{session_id}/player/{player_id}/{subtopic}
         if len(parts) == 5 and parts[2] == "player":
             player_id = parts[3]
             subtopic = parts[4]
@@ -215,11 +248,10 @@ class EngineMQTTBridge:
                 return False, fresh_reason
 
             if subtopic == "telemetry":
-                return self._handle_telemetry(player_id, payload)
+                return self._handle_telemetry(player_id, payload, now=now)
             if subtopic == "choice":
                 return self._handle_choice(player_id, payload, now=now)
 
-        # Route game command topic: motion-rps/{session_id}/game/command
         if len(parts) == 4 and parts[2] == "game" and parts[3] == "command":
             valid, reason = validate_session_and_player(payload, self.engine.session_id)
             if not valid:
@@ -229,17 +261,41 @@ class EngineMQTTBridge:
 
         return False, "IGNORED_UNHANDLED_TOPIC"
 
-    def _handle_telemetry(self, player_id: str, payload: Dict[str, Any]) -> Tuple[bool, str]:
+    def _update_player_telemetry_cache(
+        self,
+        player_id: str,
+        payload: Dict[str, Any],
+        now: Optional[float] = None,
+    ) -> None:
+        recv_ts = float(now) if now is not None else time.time()
+        prev = self.last_telemetry_features.get(player_id, {})
+        accel = payload.get("accel", prev.get("accel", [0.0, 0.0, 0.0]))
+        gyro = payload.get("gyro", prev.get("gyro", [0.0, 0.0, 0.0]))
+        last_gest = payload.get("last_gesture") or payload.get("choice") or prev.get("last_gesture")
+
+        self.last_telemetry_features[player_id] = {
+            "motion_rms": float(payload.get("motion_rms", prev.get("motion_rms", 0.0))),
+            "rotation_rad": float(payload.get("rotation_rad", prev.get("rotation_rad", 0.0))),
+            "accel": accel if isinstance(accel, list) and len(accel) == 3 else [0.0, 0.0, 0.0],
+            "gyro": gyro if isinstance(gyro, list) and len(gyro) == 3 else [0.0, 0.0, 0.0],
+            "diag_status": str(payload.get("diag_status", prev.get("diag_status", "WAITING"))),
+            "diag_reason": str(payload.get("diag_reason", prev.get("diag_reason", "TELEMETRY_RECEIVED"))),
+            "last_gesture": last_gest,
+            "triggered_axis": payload.get("triggered_axis", prev.get("triggered_axis")),
+            "sequence": int(payload.get("sequence", prev.get("sequence", 0))),
+            "last_telemetry_ts": recv_ts,
+        }
+
+    def _handle_telemetry(
+        self,
+        player_id: str,
+        payload: Dict[str, Any],
+        now: Optional[float] = None,
+    ) -> Tuple[bool, str]:
         connected = bool(payload.get("connected", True))
-        if "motion_rms" in payload or "rotation_rad" in payload:
-            self.last_telemetry_features[player_id] = {
-                "motion_rms": float(payload.get("motion_rms", 0.0)),
-                "rotation_rad": float(payload.get("rotation_rad", 0.0)),
-            }
-        prev_connected = self.engine.players[player_id].connected
+        self._update_player_telemetry_cache(player_id, payload, now=now)
         self.engine.set_player_connection(player_id, connected)
-        if prev_connected != connected or player_id in self.last_telemetry_features:
-            self.publish_state()
+        self.publish_state()
         return True, "TELEMETRY_OK"
 
     def _handle_choice(
@@ -252,6 +308,12 @@ class EngineMQTTBridge:
         round_id = payload.get("round_id")
         prev_state = self.engine.state
 
+        # Record live diagnostic/gesture even if round is not in COUNTDOWN so dashboard shows it
+        choice_diag_payload = dict(payload)
+        choice_diag_payload["diag_status"] = "DETECTED"
+        choice_diag_payload["last_gesture"] = raw_choice.strip().upper()
+        self._update_player_telemetry_cache(player_id, choice_diag_payload, now=now)
+
         accepted, reason = self.engine.submit_choice(
             player_id=player_id,
             raw_choice=raw_choice,
@@ -259,8 +321,11 @@ class EngineMQTTBridge:
             now=now,
         )
         if not accepted:
+            self.last_telemetry_features[player_id]["diag_reason"] = f"CHOICE_{reason}"
+            self.publish_state()
             return False, reason
 
+        self.last_telemetry_features[player_id]["diag_reason"] = f"LOCKED_ROUND_{self.engine.round_id} ({raw_choice.strip().upper()})"
         if prev_state == GameState.COUNTDOWN and self.engine.state == GameState.FINISHED:
             self.publish_result()
         self.publish_state()

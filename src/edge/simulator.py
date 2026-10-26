@@ -1,4 +1,4 @@
-"""Virtual player simulator for testing Motion RPS IoT over MQTT without physical sensors.
+"""Virtual player simulator and MQTT publisher helper for Motion RPS IoT.
 
 Portions adapted from PocketGuard IoT (https://github.com/ruthhhs/iot-projek)
 under the MIT License — Copyright (c) 2026 PocketGuard IoT contributors.
@@ -9,7 +9,7 @@ import json
 import ssl
 import time
 import uuid
-from typing import Callable, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
 import paho.mqtt.client as mqtt
 
 from src.engine.game_engine import PLAYER_A, PLAYER_B
@@ -22,7 +22,7 @@ from src.engine.mqtt_protocol import (
 
 
 class VirtualPlayer:
-    """Simulates an Android edge device publishing telemetry and gesture choices over MQTT."""
+    """Publishes edge telemetry (with live sensor axes & diagnostics) and gesture choices over MQTT."""
 
     def __init__(
         self,
@@ -57,7 +57,6 @@ class VirtualPlayer:
             client.tls_set(cert_reqs=ssl.CERT_REQUIRED, tls_version=ssl.PROTOCOL_TLS_CLIENT)
         client.reconnect_delay_set(min_delay=1, max_delay=30)
 
-        # Last Will: automatically notify engine if player disconnects unexpectedly
         lwt_payload = json.dumps({
             "session_id": self.session_id,
             "player_id": self.player_id,
@@ -80,12 +79,21 @@ class VirtualPlayer:
         battery: int = 100,
         motion_rms: float = 0.0,
         rotation_rad: float = 0.0,
+        accel: Optional[Tuple[float, float, float]] = None,
+        gyro: Optional[Tuple[float, float, float]] = None,
+        diag_status: str = "WAITING",
+        diag_reason: str = "IDLE",
+        last_gesture: Optional[str] = None,
+        triggered_axis: Optional[str] = None,
+        mode: str = "SIMULATION",
         now_ms: Optional[int] = None,
-    ) -> dict:
-        """Publish connection status and processed edge motion features (RMS + rotation)."""
+    ) -> Dict[str, Any]:
+        """Publish connection status, live 3-axis sensor values, and gesture diagnostic state."""
         self.sequence += 1
         sent_at_ms = now_ms if now_ms is not None else int(time.time() * 1000)
-        payload = {
+        ax, ay, az = accel if accel is not None else (0.0, 0.0, 9.81)
+        gx, gy, gz = gyro if gyro is not None else (0.0, 0.0, 0.0)
+        payload: Dict[str, Any] = {
             "msg_id": uuid.uuid4().hex[:12],
             "session_id": self.session_id,
             "player_id": self.player_id,
@@ -93,9 +101,15 @@ class VirtualPlayer:
             "sequence": self.sequence,
             "sent_at_ms": sent_at_ms,
             "connected": bool(connected),
-            "mode": "SIMULATION",
+            "mode": mode,
             "motion_rms": round(float(motion_rms), 4),
             "rotation_rad": round(float(rotation_rad), 4),
+            "accel": [round(float(ax), 3), round(float(ay), 3), round(float(az), 3)],
+            "gyro": [round(float(gx), 3), round(float(gy), 3), round(float(gz), 3)],
+            "diag_status": diag_status,
+            "diag_reason": diag_reason,
+            "last_gesture": last_gesture,
+            "triggered_axis": triggered_axis,
             "battery": battery,
             "timestamp": sent_at_ms / 1000.0,
         }
@@ -114,12 +128,16 @@ class VirtualPlayer:
         msg_id: Optional[str] = None,
         motion_rms: float = 0.0,
         rotation_rad: float = 0.0,
+        accel: Optional[Tuple[float, float, float]] = None,
+        gyro: Optional[Tuple[float, float, float]] = None,
+        triggered_axis: Optional[str] = None,
+        diag_reason: str = "DETECTED",
         now_ms: Optional[int] = None,
-    ) -> dict:
-        """Publish a gesture choice (ROCK, PAPER, or SCISSORS) with sequence & timestamp metadata."""
+    ) -> Dict[str, Any]:
+        """Publish a gesture choice (ROCK, PAPER, or SCISSORS) with sequence & sensor context."""
         self.sequence += 1
         sent_at_ms = now_ms if now_ms is not None else int(time.time() * 1000)
-        payload = {
+        payload: Dict[str, Any] = {
             "msg_id": msg_id or uuid.uuid4().hex[:12],
             "session_id": self.session_id,
             "player_id": self.player_id,
@@ -130,9 +148,16 @@ class VirtualPlayer:
             "round_id": round_id,
             "motion_rms": round(float(motion_rms), 4),
             "rotation_rad": round(float(rotation_rad), 4),
+            "triggered_axis": triggered_axis,
+            "diag_reason": diag_reason,
             "source": "SIMULATOR",
             "timestamp": sent_at_ms / 1000.0,
         }
+        if accel is not None:
+            payload["accel"] = [round(float(accel[0]), 3), round(float(accel[1]), 3), round(float(accel[2]), 3)]
+        if gyro is not None:
+            payload["gyro"] = [round(float(gyro[0]), 3), round(float(gyro[1]), 3), round(float(gyro[2]), 3)]
+
         self._publish_fn(
             self.topics.player_choice(self.player_id),
             json.dumps(payload),
@@ -164,18 +189,15 @@ def run_local_simulation_demo(session_id: str = "sim-session-01") -> dict:
     player_a = VirtualPlayer(session_id, PLAYER_A, publish_fn=route_to_bridge)
     player_b = VirtualPlayer(session_id, PLAYER_B, publish_fn=route_to_bridge)
 
-    # 1. Both players connect via telemetry
     player_a.send_telemetry(connected=True, motion_rms=0.05, rotation_rad=0.01)
     player_b.send_telemetry(connected=True, motion_rms=0.04, rotation_rad=0.01)
 
-    # 2. Dashboard sends START_GAME command
     cmd_topic = TopicBuilder(session_id).game_command()
     bridge.handle_raw_message(
         cmd_topic,
         json.dumps({"session_id": session_id, "command": "START_GAME"}),
     )
 
-    # 3. Players submit gesture choices
     current_round = engine.round_id
     player_a.send_choice("ROCK", round_id=current_round, motion_rms=2.4, rotation_rad=0.8)
     player_b.send_choice("SCISSORS", round_id=current_round, motion_rms=2.1, rotation_rad=0.7)

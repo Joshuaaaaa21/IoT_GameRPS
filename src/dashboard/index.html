@@ -35,9 +35,25 @@
             </div>
             <p>Status Koneksi: <span id="conn-status-a" class="badge offline">DISCONNECTED</span></p>
             <p class="score-display">Skor: <strong id="score-a">0</strong></p>
+
+            <!-- 1. PILIHAN PERMAINAN (Ronde Aktif / Hasil Ronde) -->
             <div class="choice-box">
-                <span>Pilihan: <strong id="choice-a">-</strong></span>
+                <span>Pilihan Ronde: <strong id="choice-a">-</strong></span>
                 <span class="outcome-tag" id="outcome-a">-</span>
+            </div>
+
+            <!-- 2. LIVE TELEMETRY & DIAGNOSTIC PANEL (Selalu aktif walau belum START GAME) -->
+            <div class="telemetry-panel">
+                <div class="telemetry-header">
+                    <strong>Live Sensor &amp; Diagnostik (PLAYER_A)</strong>
+                    <span id="diag-status-a" class="badge">WAITING</span>
+                </div>
+                <p class="diag-row">Gestur Terakhir: <strong id="last-gesture-a">-</strong> (Sumbu: <code id="axis-a">-</code>)</p>
+                <p class="diag-row">Alasan / Status: <code id="diag-reason-a">NO_TELEMETRY_YET</code></p>
+                <p class="diag-row">Accel (X, Y, Z): <code id="accel-a">0.00, 0.00, 0.00</code> m/s²</p>
+                <p class="diag-row">Gyro (X, Y, Z): <code id="gyro-a">0.00, 0.00, 0.00</code> rad/s</p>
+                <p class="diag-row">Fitur: RMS=<code id="rms-a">0.000</code> m/s² | Rot=<code id="rot-a">0.000</code> rad</p>
+                <p class="diag-row">Update Terakhir: <span id="last-seen-a">-</span> (Seq #<span id="seq-a">0</span>)</p>
             </div>
 
             <!-- Pairing QR & Fallback Player A -->
@@ -54,6 +70,7 @@
                     <small>Simulasi Cepat Edge A:</small><br>
                     <button type="button" onclick="simulateEdge('PLAYER_A', 'CONNECT')">Connect</button>
                     <button type="button" onclick="simulateEdge('PLAYER_A', 'DISCONNECT')">Disconnect</button>
+                    <button type="button" onclick="simulateGesture('PLAYER_A', 'WEAK')">Gerak Lemah (Ditolak)</button>
                     <button type="button" onclick="simulateGesture('PLAYER_A', 'LEFT')">Goyang Kiri (ROCK)</button>
                     <button type="button" onclick="simulateGesture('PLAYER_A', 'UP')">Goyang Atas (PAPER)</button>
                     <button type="button" onclick="simulateGesture('PLAYER_A', 'RIGHT')">Goyang Kanan (SCISSORS)</button>
@@ -92,9 +109,25 @@
             </div>
             <p>Status Koneksi: <span id="conn-status-b" class="badge offline">DISCONNECTED</span></p>
             <p class="score-display">Skor: <strong id="score-b">0</strong></p>
+
+            <!-- 1. PILIHAN PERMAINAN (Ronde Aktif / Hasil Ronde) -->
             <div class="choice-box">
-                <span>Pilihan: <strong id="choice-b">-</strong></span>
+                <span>Pilihan Ronde: <strong id="choice-b">-</strong></span>
                 <span class="outcome-tag" id="outcome-b">-</span>
+            </div>
+
+            <!-- 2. LIVE TELEMETRY & DIAGNOSTIC PANEL (Selalu aktif walau belum START GAME) -->
+            <div class="telemetry-panel">
+                <div class="telemetry-header">
+                    <strong>Live Sensor &amp; Diagnostik (PLAYER_B)</strong>
+                    <span id="diag-status-b" class="badge">WAITING</span>
+                </div>
+                <p class="diag-row">Gestur Terakhir: <strong id="last-gesture-b">-</strong> (Sumbu: <code id="axis-b">-</code>)</p>
+                <p class="diag-row">Alasan / Status: <code id="diag-reason-b">NO_TELEMETRY_YET</code></p>
+                <p class="diag-row">Accel (X, Y, Z): <code id="accel-b">0.00, 0.00, 0.00</code> m/s²</p>
+                <p class="diag-row">Gyro (X, Y, Z): <code id="gyro-b">0.00, 0.00, 0.00</code> rad/s</p>
+                <p class="diag-row">Fitur: RMS=<code id="rms-b">0.000</code> m/s² | Rot=<code id="rot-b">0.000</code> rad</p>
+                <p class="diag-row">Update Terakhir: <span id="last-seen-b">-</span> (Seq #<span id="seq-b">0</span>)</p>
             </div>
 
             <!-- Pairing QR & Fallback Player B -->
@@ -111,6 +144,7 @@
                     <small>Simulasi Cepat Edge B:</small><br>
                     <button type="button" onclick="simulateEdge('PLAYER_B', 'CONNECT')">Connect</button>
                     <button type="button" onclick="simulateEdge('PLAYER_B', 'DISCONNECT')">Disconnect</button>
+                    <button type="button" onclick="simulateGesture('PLAYER_B', 'WEAK')">Gerak Lemah (Ditolak)</button>
                     <button type="button" onclick="simulateGesture('PLAYER_B', 'LEFT')">Goyang Kiri (ROCK)</button>
                     <button type="button" onclick="simulateGesture('PLAYER_B', 'UP')">Goyang Atas (PAPER)</button>
                     <button type="button" onclick="simulateGesture('PLAYER_B', 'RIGHT')">Goyang Kanan (SCISSORS)</button>
