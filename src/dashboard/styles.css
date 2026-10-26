@@ -1,0 +1,166 @@
+/* Minimalist functional stylesheet — clean structure for UI/UX teammate */
+* {
+    box-sizing: border-box;
+    font-family: system-ui, -apple-system, sans-serif;
+}
+
+body {
+    margin: 0;
+    padding: 16px;
+    background: #f5f5f5;
+    color: #222;
+}
+
+.top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #fff;
+    padding: 12px 16px;
+    border: 1px solid #ccc;
+    margin-bottom: 12px;
+}
+
+.top-bar h1 {
+    margin: 0;
+    font-size: 1.4rem;
+}
+
+.subtitle {
+    margin: 4px 0 0;
+    font-size: 0.85rem;
+    color: #555;
+}
+
+.status-banner {
+    display: flex;
+    justify-content: space-between;
+    background: #fff;
+    padding: 8px 16px;
+    border: 1px solid #ccc;
+    margin-bottom: 12px;
+}
+
+.error-text {
+    color: #b00020;
+    font-weight: bold;
+}
+
+.arena-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+}
+
+@media (max-width: 900px) {
+    .arena-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.player-card, .center-panel {
+    background: #fff;
+    border: 1px solid #ccc;
+    padding: 16px;
+}
+
+.player-icon {
+    font-size: 2rem;
+    font-weight: bold;
+    margin-bottom: 8px;
+}
+
+.username-row {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.username-row input {
+    flex: 1;
+    padding: 4px 8px;
+}
+
+.badge {
+    padding: 2px 8px;
+    border: 1px solid #888;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+
+.badge.online {
+    background: #e6f4ea;
+    color: #137333;
+    border-color: #137333;
+}
+
+.badge.offline {
+    background: #fce8e6;
+    color: #c5221f;
+    border-color: #c5221f;
+}
+
+.score-display {
+    font-size: 1.25rem;
+}
+
+.choice-box {
+    padding: 8px;
+    border: 1px dashed #999;
+    margin: 8px 0;
+    display: flex;
+    justify-content: space-between;
+}
+
+.countdown-box {
+    text-align: center;
+    margin: 12px 0;
+    padding: 12px;
+    border: 1px solid #ddd;
+}
+
+.countdown-number {
+    font-size: 2.2rem;
+    font-weight: bold;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+button {
+    padding: 6px 12px;
+    cursor: pointer;
+}
+
+.primary-btn {
+    font-weight: bold;
+}
+
+.danger-btn {
+    color: #b00020;
+}
+
+.pairing-panel {
+    margin-top: 12px;
+    border-top: 1px solid #eee;
+    padding-top: 8px;
+    font-size: 0.85rem;
+}
+
+.qr-box {
+    margin: 8px 0;
+}
+
+.pair-meta code {
+    word-break: break-all;
+    background: #eee;
+    padding: 2px 4px;
+}
+
+.sim-controls button {
+    margin: 2px 2px 2px 0;
+    font-size: 0.75rem;
+}
