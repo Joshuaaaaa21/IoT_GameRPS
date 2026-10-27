@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+    <!-- CARDS SVG -->
     <svg class="icon-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <symbol id="move-rock" viewBox="0 0 64 64">
             <path d="M17 29c0-3 2-5 5-5h2v-4c0-3 5-4 7-1l2 3v-4c0-3 5-4 7-1l2 4c1-3 6-2 7 1l2 6 3 3c2 2 3 5 2 8l-3 11c-1 4-4 7-9 7H29c-4 0-7-2-9-5l-6-10c-2-3-1-7 2-9l2-1v-3Z" fill="currentColor" opacity=".22"/>
@@ -27,38 +28,41 @@
             <path d="m34 29 1 11m7-12-2 10" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2.5"/>
         </symbol>
     </svg>
+
+    <!-- TOP BAR -->
     <header class="top-bar">
-        <div>
+        <!-- LOGO -->
+        <div style="display: flex; align-items: center; gap: 16px;">
             <h1 id="project-title">Motion RPS</h1>
-            <p class="subtitle">Pick a move and play.</p>
-        </div>
-        <div class="session-box">
             <div class="session-meta">
                 <span>Session <strong id="session-id-display">-</strong></span>
                 <span id="session-active-badge" class="badge online">Active</span>
             </div>
+        </div>
+
+        <div class="session-box">
             <nav class="session-actions" aria-label="Session actions">
                 <button id="btn-new-session" type="button" class="primary-btn">New session</button>
                 <button id="btn-end-session" type="button" class="danger-btn">End session</button>
                 <a href="/pair" target="_blank" class="pair-link-btn">
-                    <span class="connect-flower" aria-hidden="true">❀</span>
                     Connect phones
-                    <span class="connect-leaf" aria-hidden="true">❧</span>
+                    <span class="connect-flower" aria-hidden="true">❀</span>
                 </a>
             </nav>
         </div>
     </header>
 
+    <!-- HERO -->
     <section class="hero-banner" aria-labelledby="hero-title">
         <div class="hero-copy">
-            <p class="hero-eyebrow"><span aria-hidden="true">❀</span> ROCK PAPER SCISSORS</p>
+            <!-- <p class="hero-eyebrow"><span aria-hidden="true">❀</span> ROCK PAPER SCISSORS</p> -->
             <h2 id="hero-title">Shake it.<br>Make your move.</h2>
             <p>Challenge a friend to a round of Rock, Paper, Scissors.</p>
             <a class="hero-cta" href="#arena">Play a round <span aria-hidden="true">↘</span></a>
-            <div class="hero-notes" aria-label="Game details">
+            <!-- <div class="hero-notes" aria-label="Game details">
                 <span>Two players</span>
                 <span>Rock Paper Scissors</span>
-            </div>
+            </div> -->
         </div>
         <div class="hero-art" aria-hidden="true">
             <div class="hero-orbit hero-orbit-back"></div>
@@ -117,6 +121,7 @@
         </div>
     </section>
 
+    <!-- CONNECTION -->
     <section class="status-banner">
         <span class="status-bloom status-bloom-left" aria-hidden="true">❀</span>
         <div>Connection: <span id="mqtt-status" class="badge">Loading...</span></div>
@@ -132,21 +137,23 @@
     <main class="arena-grid" id="arena">
         <!-- PLAYER A CARD -->
         <section class="player-card" id="card-player-a">
-            <span class="card-bloom card-bloom-a" aria-hidden="true">❀</span>
-            <div class="player-icon" aria-label="Player A">Player A</div>
-            <div class="username-row">
-                <input type="text" id="input-username-a" value="Player A" maxlength="32" aria-label="Player A name">
-                <button type="button" id="btn-save-name-a">Save</button>
-                <span id="save-name-status-a" class="save-name-status" role="status" aria-live="polite"></span>
+            <div class="flex width-full" style="display: flex; width: 100%; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <!-- <span class="card-bloom card-bloom-a" aria-hidden="true">❀</span> -->
+                <div class="player-icon" aria-label="Player A">Player A</div>
+                <span id="conn-status-a" class="badge offline">Not joined</span>
             </div>
-            <p>Status <span id="conn-status-a" class="badge offline">Not joined</span></p>
-            <p class="score-display">Score <strong id="score-a">0</strong></p>
+            
+            <div class="center-container" style="margin-bottom: 32px;">
+                <div class="username-row">
+                    <input type="text" id="input-username-a" value="Player A" maxlength="32" aria-label="Player A name">
+                    <button type="button" id="btn-save-name-a">Save</button>
+                </div>
+                <span id="save-name-status-a" class="save-name-status" role="status" aria-live="polite"></span>
 
-            <!-- Current move and round result -->
-            <div class="choice-box">
-                <span>Move</span>
-                <span class="move-display" id="choice-a" aria-live="polite">-</span>
+                <p class="score-display">Score <strong id="score-a">0</strong></p>
+
                 <span class="outcome-tag" id="outcome-a">-</span>
+                <span class="move-display" id="choice-a" aria-live="polite">-</span>
             </div>
 
             <!-- Live sensor data and diagnostics -->
@@ -226,21 +233,23 @@
 
         <!-- Player B card -->
         <section class="player-card" id="card-player-b">
-            <span class="card-bloom card-bloom-b" aria-hidden="true">❀</span>
-            <div class="player-icon" aria-label="Player B">Player B</div>
-            <div class="username-row">
-                <input type="text" id="input-username-b" value="Player B" maxlength="32" aria-label="Player B name">
-                <button type="button" id="btn-save-name-b">Save</button>
-                <span id="save-name-status-b" class="save-name-status" role="status" aria-live="polite"></span>
+            <div class="flex width-full" style="display: flex; width: 100%; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <!-- <span class="card-bloom card-bloom-b" aria-hidden="true">❀</span> -->
+                <div class="player-icon" aria-label="Player B">Player B</div>
+                <span id="conn-status-b" class="badge offline">Not joined</span>
             </div>
-            <p>Status <span id="conn-status-b" class="badge offline">Not joined</span></p>
-            <p class="score-display">Score <strong id="score-b">0</strong></p>
 
-            <!-- Current move and round result -->
-            <div class="choice-box">
-                <span>Move</span>
-                <span class="move-display" id="choice-b" aria-live="polite">-</span>
+            <div class="center-container" style="margin-bottom: 32px;">
+                <div class="username-row">
+                    <input type="text" id="input-username-b" value="Player B" maxlength="32" aria-label="Player B name">
+                    <button type="button" id="btn-save-name-b">Save</button>
+                </div>
+                <span id="save-name-status-b" class="save-name-status" role="status" aria-live="polite"></span>
+                
+                <p class="score-display">Score <strong id="score-b">0</strong></p>
+
                 <span class="outcome-tag" id="outcome-b">-</span>
+                <span class="move-display" id="choice-b" aria-live="polite">-</span>
             </div>
 
             <!-- Live sensor data and diagnostics -->
