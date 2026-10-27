@@ -1,151 +1,120 @@
-# Motion RPS IoT — Rock Paper Scissors Berbasis Sensor HP & MQTT
+# Motion RPS IoT — Rock Paper Scissors Berbasis Sensor HP, QR Pairing & MQTT
 
-Permainan IoT interaktif untuk dua pemain menggunakan sensor **Accelerometer** dan **Gyroscope** pada dua HP Android (via **Termux + Termux:API**), komunikasi **MQTT over TLS**, serta **Dashboard Web** dengan satu **Game Engine Otoritatif**.
+Permainan IoT interaktif untuk dua pemain menggunakan sensor **Accelerometer** dan **Gyroscope** pada dua HP Android (via **Termux + Termux:API**), fitur **QR Code Pairing (`PLAYER_A` & `PLAYER_B`)**, komunikasi **MQTT over TLS**, serta **Dashboard Web** dengan satu **Game Engine Otoritatif**.
 
 ---
 
-## 1. Arsitektur Sistem & Workflow
+## 1. Arsitektur Sistem & Alur QR Pairing
 
-### Diagram Arsitektur Minimal
+### Diagram Arsitektur
 ```text
-+-----------------------+                             +-----------------------+
-|      HP Android A     |                             |      HP Android B     |
-|  Termux + Termux:API  |                             |  Termux + Termux:API  |
-|  sensor_gesture.py    |                             |  sensor_gesture.py    |
-|  edge_client.py       |                             |  edge_client.py       |
-+-----------+-----------+                             +-----------+-----------+
-            | Publish Telemetry (QoS 0) & Choice (QoS 1)          |
-            +--------------------+           +--------------------+
-                                 |           |
-                                 v           v
-                       +-------------------------------+
-                       |     MQTT Broker (TLS 8883)    |
-                       |   Isolasi Topik per Session   |
-                       +---------------+---------------+
-                                       ^
-                                       | Subscribe & Publish State/Result (QoS 1)
-                                       v
-                       +-------------------------------+
-                       |   Authoritative Game Engine   |
-                       |  game_engine.py + server.py   |
-                       |    (Single Source of Truth)   |
-                       +---------------+---------------+
-                                       ^
-                                       | HTTP / JSON State & Commands
-                                       v
-                       +-------------------------------+
-                       |      Dashboard Web (GUI)      |
-                       |   index.html + app.js + CSS   |
-                       +-------------------------------+
++---------------------------+                         +---------------------------+
+|        HP Android A       |                         |        HP Android B       |
+| 1. Browser: /pair Scan QR |                         | 1. Browser: /pair Scan QR |
+| 2. Termux: start_edge.sh  |                         | 2. Termux: start_edge.sh  |
++-------------+-------------+                         +-------------+-------------+
+              |  Join Session (HTTP /api/pair/join)                 |
+              |  & Live Telemetry/Choice (MQTT)                     |
+              +--------------------+           +--------------------+
+                                   |           |
+                                   v           v
+                         +-------------------------------+
+                         |     MQTT Broker (TLS 8883)    |
+                         |  + Topik Pairing Dinamis      |
+                         +---------------+---------------+
+                                         ^
+                                         | Subscribe & Publish State/Result/Assignment
+                                         v
+                         +-------------------------------+
+                         |   Authoritative Game Engine   |
+                         |  game_engine.py + server.py   |
+                         |    (Single Source of Truth)   |
+                         +---------------+---------------+
+                                         ^
+                                         | HTTP / JSON State & QR Matrix
+                                         v
+                         +-------------------------------+
+                         |    Dashboard Laptop & /pair   |
+                         |  index.html + pair.html + JS  |
+                         +-------------------------------+
 ```
 
-### Workflow Permainan (Alur End-to-End)
-1. **Inisialisasi Sesi**: Server Dashboard (`src/engine/server.py`) membuat `session_id` unik (contoh: `rps-4f8a1c`) dan menampilkan QR Code serta kode pairing singkat untuk `PLAYER_A` dan `PLAYER_B`.
-2. **Pairing Perangkat**: Kedua HP memindai QR Code atau menjalankan perintah fallback di Termux (`python -m src.edge.edge_client --pair-code rps-4f8a1c:PLAYER_A`). Secret/password broker **tidak pernah** dimasukkan ke QR code, melainkan dibaca dari `.env` lokal.
-3. **Kalibrasi Sensor**: Skrip di HP mengambil sampel awal saat HP diam selama ~1 detik untuk menghitung baseline gravitasi `(bx, by, bz)`.
-4. **Koneksi & Ready Gate**: Kedua HP mengirim telemetri `connected: true`. Setelah kedua pemain aktif, state Game Engine otomatis berpindah dari `WAITING_FOR_PLAYERS` ke `READY`.
-5. **Start & Countdown**: Saat tombol **START GAME** ditekan di Dashboard, Game Engine menaikkan `round_id`, mengubah state ke `COUNTDOWN` (default 5 detik), dan menyiarkan state terbaru.
-6. **Deteksi Gesture & Lock Pilihan**:
-   - Pemain menggoyangkan HP:
-     - **Goyang ke Kiri (`LEFT`)** $\rightarrow$ `ROCK`
-     - **Goyang ke Kanan (`RIGHT`)** $\rightarrow$ `SCISSORS`
-     - **Goyang ke Atas (`UP`)** $\rightarrow$ `PAPER`
-   - `GestureClassifier` menerapkan *threshold*, *settle guard* (HP harus kembali tenang sebelum arming ulang), dan *debounce* (`1.2s`) sehingga satu ayunan tangan beserta ayunan baliknya (rebound) dijamin hanya menghasilkan **tepat satu pilihan**.
-7. **Evaluasi & Anti-Skor Ganda**: Begitu kedua pilihan diterima (atau waktu countdown habis), `GameEngine` mengevaluasi pemenang, mengunci `_round_scored = True` agar skor hanya bertambah **tepat satu kali per ronde**, lalu mempublikasikan hasil ke dashboard.
+### Alur QR Pairing Sampai Sensor Terhubung (Tanpa Ketik Session ID Berulang)
+1. **Buat Sesi & Tampilkan QR**: Dashboard laptop (`http://127.0.0.1:8080`) menampilkan `session_id` unik serta **QR Code ISO/IEC 18004 asli** (baik QR Sesi Umum maupun QR spesifik `PLAYER_A` & `PLAYER_B`). QR hanya memuat versi (`v=1`), URL `/pair`, `session`, `player`, dan token sementara (`pt` ber-TTL 10 menit) — **tanpa password broker atau kredensial rahasia**.
+2. **Launcher 1-Perintah di Termux**: Di masing-masing HP, pengguna cukup menjalankan `bash scripts/start_edge.sh` satu kali. Script mengaktifkan `termux-wake-lock` dan menunggu penugasan sesi (`--auto-pair`).
+3. **Scan QR & Join di Browser HP**:
+   - Pemain A dan Pemain B memindai QR Code dari layar laptop (menggunakan aplikasi Kamera HP atau tombol **📷 Scan QR** / **📸 Ambil Foto QR** di halaman `http://<ip-laptop>:8080/pair`).
+   - Pemain mengonfirmasi **Username** dan **Slot (`PLAYER_A` / `PLAYER_B` / `Otomatis`)**, lalu menekan **✅ Join Session**.
+4. **Penugasan Sesi Otomatis ke Termux**:
+   - Backend memvalidasi token sementara & kepemilikan slot (`SessionPairingManager`), menyimpan username di `GameEngine`, lalu mem-publish perintah `ASSIGN_SESSION` ke topik MQTT `motion-rps/pairing/slot/{player_id}` (serta menyediakannya di `GET /api/pair/assignment`).
+   - Script `edge_client.py` di Termux otomatis berpindah (`reconfigure_session`) ke `session_id` tersebut dan mulai mengirimkan *live telemetry* sensor fisik.
+5. **Validasi Status Online & Mulai Permainan**:
+   - Dashboard membedakan status `WAITING` (belum join), `PAIRED (Menunggu Sensor Termux)` (baru scan QR di web), dan `READY / CONNECTED (Sensor Online)` (telemetry/heartbeat sensor aktual telah masuk).
+   - Tombol **START GAME** otomatis aktif ketika kedua pemain berstatus `READY / CONNECTED`.
 
 ---
 
 ## 2. Tabel Spesifikasi Topik MQTT
 
-Seluruh topik diisolasi berdasarkan `session_id`: `motion-rps/{session_id}/...`
-
-| Topik | Publisher | Subscriber | QoS | Retain | Fungsi & Contoh Payload JSON |
+| Topik | Publisher | Subscriber | QoS | Retain | Fungsi |
 | :--- | :--- | :--- | :---: | :---: | :--- |
-| `motion-rps/{session_id}/player/{player_id}/telemetry` | Edge HP (`PLAYER_A` / `PLAYER_B`) & Broker LWT | Game Engine | 0 (1 untuk LWT) | False | Heartbeat koneksi & status perangkat:<br>`{"msg_id":"a1b2", "session_id":"rps-01", "player_id":"PLAYER_A", "connected":true, "mode":"TERMUX_SENSOR"}` |
-| `motion-rps/{session_id}/player/{player_id}/choice` | Edge HP (`PLAYER_A` / `PLAYER_B`) | Game Engine | 1 | False | Pilihan gesture pemain pada ronde aktif:<br>`{"msg_id":"c3d4", "session_id":"rps-01", "player_id":"PLAYER_A", "choice":"ROCK", "round_id":1}` |
-| `motion-rps/{session_id}/game/command` | Dashboard Web | Game Engine | 1 | False | Perintah kontrol (`START_GAME`, `RESET_SCORE`, `SET_USERNAME`):<br>`{"session_id":"rps-01", "command":"START_GAME"}` |
+| `motion-rps/{session_id}/player/{player_id}/telemetry` | Edge HP (`PLAYER_A` / `PLAYER_B`) & LWT | Game Engine | 0 (1 LWT) | False | Heartbeat periodik (2.0s), akselerometer, giroskop, & status diagnostik |
+| `motion-rps/{session_id}/player/{player_id}/choice` | Edge HP (`PLAYER_A` / `PLAYER_B`) | Game Engine | 1 | False | Pilihan gerakan pemain (`ROCK`, `PAPER`, `SCISSORS`) saat `COUNTDOWN` |
+| `motion-rps/{session_id}/game/command` | Dashboard Web | Game Engine | 1 | False | Perintah kontrol (`START_GAME`, `RESET_SCORE`, `SET_USERNAME`) |
 | `motion-rps/{session_id}/game/state` | Game Engine | Dashboard & Edge HP | 1 | True | Snapshot otoritatif state permainan, koneksi, countdown, dan skor |
 | `motion-rps/{session_id}/game/result` | Game Engine | Dashboard Web | 1 | False | Hasil akhir ronde (`PLAYER_A_WIN`, `PLAYER_B_WIN`, `DRAW`, `FORFEIT_A/B`, `VOID_NO_MOVES`) |
+| `motion-rps/pairing/slot/{player_id}` | Server / Bridge | Edge HP (`--auto-pair`) | 1 | True | Penugasan sesi dinamis (`ASSIGN_SESSION` / `LEAVE_SESSION`) hasil QR pairing |
+| `motion-rps/pairing/device/{device_id}` | Server / Bridge | Edge HP (`--auto-pair`) | 1 | True | Penugasan sesi dinamis spesifik per identitas perangkat (`device_id`) |
 
 ---
 
-## 3. Konfigurasi Sensor & Cara Menguji Gesture
+## 3. Setup Termux Satu Kali & Penggunaan Harian
 
-Orientasi sumbu sensor dapat berbeda antar merek HP Android. Secara default (`src/edge/sensor_gesture.py` — `GestureConfig`), saat HP dipegang vertikal (portrait):
-- **Goyang Kiri (`ROCK`)**: lonjakan akselerasi negatif pada sumbu X (`left_axis="ax", left_sign=-1`).
-- **Goyang Kanan (`SCISSORS`)**: lonjakan akselerasi positif pada sumbu X (`right_axis="ax", right_sign=+1`).
-- **Goyang Atas (`PAPER`)**: lonjakan akselerasi positif pada sumbu Y (`up_axis="ay", up_sign=+1`).
-
-Jika sumbu X pada HP Anda terbalik, jalankan `edge_client.py` dengan flag `--invert-x` atau ubah parameter `GestureConfig`.
-
-### Uji Cepat Satu Gesture (Tanpa HP Fisik)
-```powershell
-python -m scripts.check_sensors --simulate --gesture LEFT
-python -m src.edge.edge_client --pair-code rps-demo:PLAYER_A --sim-gesture LEFT
-python -m src.edge.edge_client --pair-code rps-demo:PLAYER_A --sim-gesture RIGHT
-python -m src.edge.edge_client --pair-code rps-demo:PLAYER_A --sim-gesture UP
-```
-
-### Diagnostik Sensor di Termux (Diadaptasi dari Referensi PocketGuard IoT)
-Sebelum menghubungkan ke broker MQTT, uji sensor fisik di kedua HP Android menggunakan:
+### A. Setup Pertama Kali di Termux (Cukup Sekali Saja)
+Instal aplikasi **Termux** dan **Termux:API** dari F-Droid, salin folder proyek beserta `.env`, lalu jalankan script setup satu kali:
 ```bash
-python -m scripts.check_sensors --readings 12
+# Di HP A (disimpan sebagai PLAYER_A di ~/.motion_rps_edge.json):
+bash scripts/setup_termux.sh A
+
+# Di HP B (disimpan sebagai PLAYER_B di ~/.motion_rps_edge.json):
+bash scripts/setup_termux.sh B
 ```
-Skrip ini otomatis mendeteksi nama sensor terkalibrasi lewat `termux-sensor -l` (mengabaikan `uncalibrated`), menghitung `motion_rms` dan `rotation_rad`, serta menampilkan hasil deteksi arah (`ROCK`, `SCISSORS`, `PAPER`). Untuk mencetak nilai mentah saat bermain, tambahkan flag `--debug-sensors` pada `edge_client.py`.
+Script ini memeriksa `termux-sensor`, memasang dependency `requirements.txt`, menyimpan konfigurasi slot default, dan membuat shortcut `~/.shortcuts/motion-rps.sh` untuk **Termux:Widget**.
 
----
-
-## 4. Langkah Demo & Cara Menjalankan Proyek
-
-### A. Persiapan Environment
-```powershell
-pip install -r requirements.txt
-Copy-Item .env.example .env
-# Edit .env jika ingin menghubungkan ke HiveMQ Cloud (TLS port 8883)
-```
-
-### B. Menjalankan Dashboard & Game Engine Server
-```powershell
-# Mode lokal + simulasi (tanpa broker eksternal):
-python -m src.engine.server --host 127.0.0.1 --port 8080 --session rps-demo01
-
-# Mode terkoneksi ke Broker MQTT (sesuai .env):
-python -m src.engine.server --host 0.0.0.0 --port 8080 --session rps-demo01 --connect-mqtt
-```
-Buka browser di **`http://127.0.0.1:8080`**.
-- Di dalam Dashboard tersedia panel **Simulasi Cepat Edge A & Edge B** sehingga Anda dapat langsung mendemokan `Connect`, `START GAME`, `Goyang Kiri/Atas/Kanan`, dan `RESET SCORE` langsung dari browser.
-
-### C. Menjalankan Klien di 2 HP Android (Termux)
-1. Instal aplikasi **Termux** dan **Termux:API** dari F-Droid, lalu di dalam Termux jalankan:
-   ```bash
-   pkg update && pkg install termux-api python git
-   pip install paho-mqtt
+### B. Menjalankan Permainan pada Penggunaan Berikutnya
+1. **Di Laptop**:
+   ```powershell
+   python -m src.engine.server --host 0.0.0.0 --port 8080 --connect-mqtt
    ```
-2. Salin kode proyek dan file `.env` ke kedua HP.
-3. Salin perintah pairing dari Dashboard:
-   - **HP 1 (Player A)**:
-     ```bash
-     python -m src.edge.edge_client --pair-code rps-demo01:PLAYER_A
-     ```
-   - **HP 2 (Player B)**:
-     ```bash
-     python -m src.edge.edge_client --pair-code rps-demo01:PLAYER_B
-     ```
-4. Jika diuji di laptop tanpa sensor Termux, tambahkan `--simulate` untuk memakai input interaktif (`LEFT`, `RIGHT`, `UP`).
+   Buka `http://127.0.0.1:8080` di browser laptop.
+2. **Di Termux HP A & HP B** (cukup 1 perintah, tanpa mengetik Session ID):
+   ```bash
+   bash scripts/start_edge.sh
+   ```
+   *(Atau ketuk shortcut `motion-rps.sh` dari widget homescreen Termux:Widget).*
+3. **Di Browser HP A & HP B**:
+   - Scan QR Code di layar laptop atau buka `http://<ip-laptop>:8080/pair`.
+   - Masukkan Username, pastikan slot sesuai (`PLAYER_A` / `PLAYER_B`), lalu tekan **✅ Join Session**.
+   - Untuk menghentikan sensor di Termux kapan saja, tekan **`Ctrl+C`** (otomatis melepas `termux-wake-lock` dan mengirim status `OFFLINE`).
 
 ---
 
-## 5. Hasil Pengujian (Otomatis vs Simulasi vs Perangkat Nyata)
+## 4. Perilaku Background, Reconnect, & Troubleshooting
 
-Jalankan seluruh suite pengujian dengan perintah:
+| Situasi | Perilaku Aktual Sistem & Solusi |
+| :--- | :--- |
+| **Browser HP ditutup setelah Join** | Sensor di Termux **tetap berjalan dan terhubung** karena komunikasi telemetry dilakukan oleh proses `edge_client.py` di Termux, bukan oleh tab browser. |
+| **Termux berpindah ke background / HP terkunci** | `start_edge.sh` dan `edge_client.py` mengaktifkan `termux-wake-lock` agar CPU tidak tidur saat Anda membuka browser HP atau mengunci layar. Pastikan optimasi baterai Android untuk **Termux** dan **Termux:API** diatur ke *Unrestricted / Jangan Optimalkan*. |
+| **Termux ditutup paksa (Force Stop / Swipe Kill)** | Proses Python berhenti. Dashboard akan mengubah status pemain menjadi `OFFLINE` (melalui MQTT LWT atau `HEARTBEAT_TIMEOUT` 15 detik). Buka kembali Termux dan jalankan `bash scripts/start_edge.sh` untuk reconnect otomatis tanpa kehilangan skor sesi. |
+| **Kamera live diblokir browser pada HTTP LAN** | Browser modern membatasi live video `getUserMedia` pada koneksi non-HTTPS (`http://192.168.x.x`). Gunakan tombol **📸 Ambil Foto QR (Kamera HP)**, scan langsung dari aplikasi Kamera bawaan HP, atau gunakan tombol **🔄 Ambil Sesi Aktif Server** / input manual di `/pair`. |
+| **Scan QR dua kali / Refresh halaman** | Sistem menyimpan `device_id` dan `client_token` di browser sehingga scan ulang oleh HP yang sama dikenali sebagai reconnect idempoten tanpa menolak pemain atau mereset skor. |
+| **Pemain ke-3 mencoba masuk** | Ditolak secara otomatis dengan status `SESSION_FULL` (atau `SLOT_ALREADY_OCCUPIED` jika mencoba mengambil alih slot pemain aktif). |
+
+---
+
+## 5. Pengujian Otomatis
+
+Jalankan seluruh pengujian unit & integrasi (30 test mencakup pembuatan sesi, matriks QR ISO, validasi token sementara, kedaluwarsa QR, penolakan pemain ke-3, anti-bajakan slot, dynamic pairing MQTT ke Termux, heartbeat timeout, reconnect, dan isolasi sesi lama):
 ```powershell
 python -m unittest discover -s tests -v
 ```
-
-| Kategori Pengujian | Cakupan | Status | Detail Verifikasi |
-| :--- | :--- | :---: | :--- |
-| **1. Tes Otomatis (Unit Tests)** | `tests/test_game_engine.py`<br>`tests/test_sensor_gesture.py`<br>`tests/test_pairing_and_integration.py` | **PASS (27/27 test)** | Seluruh 9 aturan kombinasi RPS, anti-duplikasi pilihan, jaminan skor +1 tepat sekali per ronde, timeout forfeit, ekstraksi `motion_rms` & `rotation_rad`, auto-discovery `termux-sensor -l`, anti-replay `(boot_id, sequence)`, cek `sent_at_ms`, proteksi `/config.json` & QR code. |
-| **2. Tes Simulasi End-to-End** | `tests/test_mqtt_simulation.py`<br>`src/edge/simulator.py`<br>HTTP Dashboard Simulation API | **PASS** | Dua pemain virtual (`PLAYER_A` & `PLAYER_B`) berkomunikasi lewat `EngineMQTTBridge` dan server HTTP Dashboard (`ThreadingHTTPServer`) dari state `WAITING_FOR_PLAYERS` $\rightarrow$ `READY` $\rightarrow$ `COUNTDOWN` $\rightarrow$ `FINISHED` dan `RESET_SCORE`. |
-| **3. Pengujian Perangkat Nyata (Android Termux)** | `TermuxSensorReader.stream_termux_sensors()` | **BELUM DIUJI PADA HP FISIK DI WORKSPACE INI** | Lingkungan eksekusi saat ini adalah Windows PC (`termux-sensor` binary tidak tersedia di Windows). Parser JSON `termux-sensor` telah diverifikasi melalui unit test, dan deteksi ketersediaan sensor menggunakan `shutil.which("termux-sensor")` telah diterapkan secara jujur (otomatis fallback ke mode simulasi bila dijalankan di PC). |
-#   t e s t _ i o t _ g a m e s r p s  
- 

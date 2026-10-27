@@ -1,4 +1,4 @@
-// Minimal Dashboard Controller for Motion RPS IoT
+// Dashboard Controller for Motion RPS IoT (with ISO QR Code Rendering & Live Telemetry)
 
 let lastSessionId = null;
 
@@ -23,10 +23,10 @@ function fmtTime(ts) {
 }
 
 /**
- * Draws a deterministic visual matrix pattern + readable label on canvas for QR pairing
- * without requiring external third-party CDN scripts (works 100% offline).
+ * Renders a real ISO/IEC 18004 QR Code matrix (with 4-module quiet zone) onto a canvas
+ * so Android/iOS cameras and web QR scanners can scan it directly.
  */
-function renderPairingMatrix(canvasId, uriText, pairCode) {
+function renderPairingMatrix(canvasId, uriText, pairCode, qrMatrix) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -34,44 +34,49 @@ function renderPairingMatrix(canvasId, uriText, pairCode) {
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, size, size);
 
-    const cells = 21;
-    const cellSize = Math.floor((size - 16) / cells);
-    const offset = 8;
+    if (Array.isArray(qrMatrix) && qrMatrix.length > 0) {
+        const modules = qrMatrix.length;
+        const quietZone = 3;
+        const totalCells = modules + quietZone * 2;
+        const cellSize = Math.max(2, Math.floor(size / totalCells));
+        const offset = Math.floor((size - cellSize * modules) / 2);
 
-    function drawFinder(cx, cy) {
         ctx.fillStyle = "#000000";
-        ctx.fillRect(offset + cx * cellSize, offset + cy * cellSize, 7 * cellSize, 7 * cellSize);
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(offset + (cx + 1) * cellSize, offset + (cy + 1) * cellSize, 5 * cellSize, 5 * cellSize);
-        ctx.fillStyle = "#000000";
-        ctx.fillRect(offset + (cx + 2) * cellSize, offset + (cy + 2) * cellSize, 3 * cellSize, 3 * cellSize);
-    }
-
-    drawFinder(0, 0);
-    drawFinder(cells - 7, 0);
-    drawFinder(0, cells - 7);
-
-    ctx.fillStyle = "#000000";
-    for (let r = 0; r < cells; r++) {
-        for (let c = 0; c < cells; c++) {
-            const inFinder =
-                (r < 8 && c < 8) ||
-                (r < 8 && c >= cells - 8) ||
-                (r >= cells - 8 && c < 8);
-            if (inFinder) continue;
-            const idx = (r * cells + c) % uriText.length;
-            const code = uriText.charCodeAt(idx);
-            if (((code + r * 3 + c * 7) & 1) === 0) {
-                ctx.fillRect(offset + c * cellSize, offset + r * cellSize, cellSize, cellSize);
+        for (let r = 0; r < modules; r++) {
+            const row = qrMatrix[r];
+            for (let c = 0; c < modules; c++) {
+                if (row[c]) {
+                    ctx.fillRect(offset + c * cellSize, offset + r * cellSize, cellSize, cellSize);
+                }
             }
         }
+        return;
     }
+
+    // Visual placeholder when session is ended
+    ctx.fillStyle = "#888888";
+    ctx.font = "12px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Sesi Berakhir", size / 2, size / 2);
 }
 
 function updatePlayerCard(suffix, playerState, outcomeText, pairingData) {
     const connEl = document.getElementById(`conn-status-${suffix}`);
-    connEl.textContent = playerState.connected ? "CONNECTED" : "DISCONNECTED";
-    connEl.className = "badge " + (playerState.connected ? "online" : "offline");
+    if (playerState.connected) {
+        connEl.textContent = "READY / CONNECTED (Sensor Online)";
+        connEl.className = "badge online";
+    } else if (playerState.web_paired) {
+        connEl.textContent = "PAIRED (Menunggu Sensor Termux)";
+        connEl.className = "badge warn";
+    } else {
+        connEl.textContent = "WAITING (Belum Join)";
+        connEl.className = "badge offline";
+    }
+
+    const nameInput = document.getElementById(`input-username-${suffix}`);
+    if (nameInput && document.activeElement !== nameInput) {
+        nameInput.value = playerState.username || "";
+    }
 
     document.getElementById(`score-${suffix}`).textContent = playerState.score;
 
@@ -120,10 +125,14 @@ function updatePlayerCard(suffix, playerState, outcomeText, pairingData) {
     if (seqEl) seqEl.textContent = String(playerState.sequence || 0);
 
     if (pairingData) {
-        document.getElementById(`qr-uri-${suffix}`).textContent = pairingData.qr_uri;
+        document.getElementById(`qr-uri-${suffix}`).textContent = pairingData.web_pair_url || pairingData.qr_uri;
         document.getElementById(`pair-code-${suffix}`).textContent = pairingData.pair_code;
         document.getElementById(`termux-cmd-${suffix}`).textContent = pairingData.termux_cmd;
-        renderPairingMatrix(`qr-canvas-${suffix}`, pairingData.qr_uri, pairingData.pair_code);
+        const autoCmdEl = document.getElementById(`auto-cmd-${suffix}`);
+        if (autoCmdEl && pairingData.auto_termux_cmd) {
+            autoCmdEl.textContent = pairingData.auto_termux_cmd;
+        }
+        renderPairingMatrix(`qr-canvas-${suffix}`, pairingData.qr_uri, pairingData.pair_code, pairingData.qr_matrix);
     }
 }
 
@@ -135,6 +144,27 @@ async function refreshState() {
         document.getElementById("session-id-display").textContent = data.session_id;
         document.getElementById("game-state-display").textContent = data.state;
         document.getElementById("round-id-display").textContent = data.round_id;
+
+        const activeBadge = document.getElementById("session-active-badge");
+        if (activeBadge) {
+            const isActive = data.session_active !== false;
+            activeBadge.textContent = isActive ? "ACTIVE" : "ENDED";
+            activeBadge.className = "badge " + (isActive ? "online" : "offline");
+        }
+
+        const pairUrlEl = document.getElementById("session-pair-url-display");
+        if (pairUrlEl && data.pairing && data.pairing.session_pair_url) {
+            pairUrlEl.textContent = data.pairing.session_pair_url;
+        }
+
+        if (data.pairing) {
+            renderPairingMatrix(
+                "qr-canvas-session",
+                data.pairing.session_pair_url || "",
+                data.session_id,
+                data.pairing.session_qr_matrix
+            );
+        }
 
         const mqttEl = document.getElementById("mqtt-status");
         mqttEl.textContent = data.mqtt.status_text;
@@ -161,6 +191,18 @@ async function refreshState() {
         document.getElementById("round-outcome-display").textContent = last ? last.outcome : "-";
         document.getElementById("winner-name-display").textContent =
             last && last.winner_username ? last.winner_username : (last ? "DRAW / TIDAK ADA" : "-");
+
+        // Enable START GAME only when both players have active sensor connections and no round is in countdown
+        const startBtn = document.getElementById("btn-start-game");
+        if (startBtn) {
+            const bothReady = Boolean(
+                data.players.PLAYER_A.connected &&
+                data.players.PLAYER_B.connected &&
+                data.session_active !== false &&
+                data.state !== "COUNTDOWN"
+            );
+            startBtn.disabled = !bothReady;
+        }
 
         if (lastSessionId !== data.session_id) {
             document.getElementById("input-username-a").value = data.players.PLAYER_A.username;
@@ -225,6 +267,14 @@ document.getElementById("btn-new-session").addEventListener("click", async () =>
     await postJSON("/api/new_session", {});
     await refreshState();
 });
+
+const endSessionBtn = document.getElementById("btn-end-session");
+if (endSessionBtn) {
+    endSessionBtn.addEventListener("click", async () => {
+        await postJSON("/api/end_session", {});
+        await refreshState();
+    });
+}
 
 window.simulateEdge = simulateEdge;
 window.simulateGesture = simulateGesture;

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Motion RPS IoT — QR Pairing HP</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="mobile-pair-body">
+    <header class="top-bar">
+        <div>
+            <h1>📱 Motion RPS — Pairing HP</h1>
+            <p class="subtitle">Scan QR Sesi untuk Bergabung sebagai Player A atau Player B</p>
+        </div>
+        <div>
+            <a href="/" class="pair-link-btn">💻 Ke Dashboard Utama</a>
+        </div>
+    </header>
+
+    <main class="pair-container">
+        <!-- 1. PEMINDAI QR & FALLBACK MANUAL -->
+        <section class="player-card">
+            <h2>1. Scan QR Code Sesi</h2>
+            <p class="subtitle">Arahkan kamera HP ke QR Code di Dashboard Laptop, atau gunakan salah satu tombol di bawah:</p>
+
+            <div class="action-buttons wrap-btns">
+                <button type="button" id="btn-scan-qr" class="primary-btn">📷 Scan QR (Live Kamera)</button>
+                <button type="button" id="btn-stop-camera" hidden>⏹ Tutup Kamera</button>
+                <label class="file-btn">
+                    📸 Ambil Foto QR (Kamera HP)
+                    <input type="file" id="input-qr-photo" accept="image/*" capture="environment" hidden>
+                </label>
+                <button type="button" id="btn-fetch-active-session">🔄 Ambil Sesi Aktif Server</button>
+            </div>
+
+            <!-- Live Camera Viewfinder -->
+            <div id="camera-container" class="camera-box" hidden>
+                <video id="qr-video" playsinline muted></video>
+                <p id="camera-hint" class="pair-meta">Arahkan kamera ke QR Code pada layar laptop...</p>
+            </div>
+
+            <!-- Tampilan Hasil Scan -->
+            <div id="scan-result-box" class="choice-box">
+                <span>Hasil Scan / Sesi: <strong id="scan-result-text">Belum dipindai</strong></span>
+                <span id="scan-status-badge" class="badge">WAITING</span>
+            </div>
+
+            <!-- Fallback Input Manual -->
+            <div class="manual-fallback-box">
+                <label for="input-session-code"><strong>Session ID / Kode Pairing (Otomatis terisi dari QR atau ketik manual):</strong></label>
+                <input type="text" id="input-session-code" placeholder="Contoh: rps-a1b2c3 atau rps-a1b2c3:A">
+            </div>
+        </section>
+
+        <!-- 2. KONFIRMASI IDENTITAS & JOIN SESSION -->
+        <section class="player-card">
+            <h2>2. Konfirmasi Pemain &amp; Bergabung</h2>
+
+            <div class="form-row">
+                <label for="input-pair-username"><strong>Username Pemain:</strong></label>
+                <input type="text" id="input-pair-username" placeholder="Masukkan nama Anda (contoh: Andi)" maxlength="32">
+            </div>
+
+            <div class="form-row">
+                <label for="select-player-slot"><strong>Pilih Peran Pemain (Slot):</strong></label>
+                <select id="select-player-slot">
+                    <option value="AUTO">Otomatis (Pilih Slot Kosong A / B)</option>
+                    <option value="PLAYER_A">PLAYER_A (Pemain A)</option>
+                    <option value="PLAYER_B">PLAYER_B (Pemain B)</option>
+                </select>
+            </div>
+
+            <div class="action-buttons">
+                <button type="button" id="btn-join-session" class="primary-btn">✅ Join Session</button>
+                <button type="button" id="btn-leave-session" class="danger-btn" disabled>🚪 Leave / Disconnect</button>
+            </div>
+
+            <div id="pair-feedback-banner" class="status-banner" hidden></div>
+        </section>
+
+        <!-- 3. STATUS KONEKSI, SENSOR TERMUX, & GAME -->
+        <section class="player-card">
+            <h2>3. Status Koneksi &amp; Sensor Fisik</h2>
+            <p>Slot Terdaftar: <strong id="assigned-slot-display">-</strong> | Sesi: <strong id="assigned-session-display">-</strong></p>
+            <p>Status Web Pairing: <span id="web-pair-status" class="badge offline">BELUM TERHUBUNG</span></p>
+            <p>Status Sensor Termux: <span id="sensor-conn-status" class="badge offline">OFFLINE (Menunggu Telemetry)</span></p>
+
+            <div class="telemetry-panel">
+                <div class="telemetry-header">
+                    <strong>Monitor Sensor &amp; Ronde Live</strong>
+                    <span id="mobile-game-state" class="badge">WAITING_FOR_PLAYERS</span>
+                </div>
+                <p class="diag-row">Ronde Aktif: <strong id="mobile-round-id">0</strong> | Skor Anda: <strong id="mobile-score">0</strong></p>
+                <p class="diag-row">Gestur Terakhir: <strong id="mobile-last-gesture">-</strong> | Pilihan Ronde: <strong id="mobile-round-choice">-</strong></p>
+                <p class="diag-row">Accel (X, Y, Z): <code id="mobile-accel">0.00, 0.00, 0.00</code> m/s²</p>
+                <p class="diag-row">Status Klasifikasi: <code id="mobile-diag-reason">NO_TELEMETRY_YET</code></p>
+            </div>
+
+            <!-- Instruksi Hubungan Browser -> Termux -->
+            <div class="termux-bridge-box">
+                <h3>⚡ Cara Mengaktifkan Sensor Termux (Sekali Jalan)</h3>
+                <p class="pair-meta">
+                    Jika <code>start_edge.sh</code> sudah berjalan di Termux HP ini, sensor <strong>otomatis tersambung</strong> ke sesi di atas begitu Anda menekan <strong>Join Session</strong> tanpa perlu mengetik Session ID!
+                </p>
+                <p class="pair-meta">Jika Termux belum dibuka, jalankan 1 perintah tetap ini di Termux:</p>
+                <div class="cmd-copy-row">
+                    <code id="mobile-auto-cmd">bash scripts/start_edge.sh A</code>
+                    <button type="button" id="btn-copy-auto-cmd">Salin</button>
+                </div>
+                <details style="margin-top: 8px;">
+                    <summary>Opsi Perintah Manual (Dengan Session ID Eksplisit)</summary>
+                    <div class="cmd-copy-row" style="margin-top: 6px;">
+                        <code id="mobile-direct-cmd">python -m src.edge.edge_client --pair-code -</code>
+                        <button type="button" id="btn-copy-direct-cmd">Salin</button>
+                    </div>
+                </details>
+            </div>
+        </section>
+    </main>
+
+    <script src="/pair.js"></script>
+</body>
+</html>

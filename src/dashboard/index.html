@@ -14,13 +14,17 @@
         </div>
         <div class="session-box">
             <span>Session ID: <strong id="session-id-display">-</strong></span>
-            <button id="btn-new-session" type="button">Buat Session Baru</button>
+            <span id="session-active-badge" class="badge online">ACTIVE</span>
+            <button id="btn-new-session" type="button" class="primary-btn">Buat Session Baru</button>
+            <button id="btn-end-session" type="button" class="danger-btn">Akhiri Sesi</button>
+            <a href="/pair" target="_blank" class="pair-link-btn">📱 Buka Halaman Pairing HP (/pair)</a>
         </div>
     </header>
 
     <!-- Status MQTT & Error Bar -->
     <section class="status-banner">
         <div>Status MQTT: <span id="mqtt-status" class="badge">Memuat...</span></div>
+        <div>URL Pairing HP (LAN): <code id="session-pair-url-display">-</code></div>
         <div id="error-banner" class="error-text" hidden></div>
     </section>
 
@@ -33,7 +37,7 @@
                 <input type="text" id="input-username-a" value="Player A" maxlength="32" aria-label="Username Player A">
                 <button type="button" id="btn-save-name-a">Simpan Nama</button>
             </div>
-            <p>Status Koneksi: <span id="conn-status-a" class="badge offline">DISCONNECTED</span></p>
+            <p>Status Pemain: <span id="conn-status-a" class="badge offline">WAITING</span></p>
             <p class="score-display">Skor: <strong id="score-a">0</strong></p>
 
             <!-- 1. PILIHAN PERMAINAN (Ronde Aktif / Hasil Ronde) -->
@@ -60,11 +64,13 @@
             <details class="pairing-panel" open>
                 <summary>Pairing &amp; QR Code (PLAYER_A)</summary>
                 <div class="qr-box">
-                    <canvas id="qr-canvas-a" width="140" height="140"></canvas>
+                    <canvas id="qr-canvas-a" width="164" height="164"></canvas>
                 </div>
-                <p class="pair-meta">URI: <code id="qr-uri-a">-</code></p>
-                <p class="pair-meta">Kode Fallback Termux: <code id="pair-code-a">-</code></p>
-                <p class="pair-meta">Perintah Termux: <code id="termux-cmd-a">-</code></p>
+                <p class="pair-meta">Scan QR di atas dengan HP A (atau melalui halaman <code>/pair</code>)</p>
+                <p class="pair-meta">Launcher 1-Perintah Termux: <code id="auto-cmd-a">bash scripts/start_edge.sh A</code></p>
+                <p class="pair-meta">Kode Fallback Manual: <code id="pair-code-a">-</code></p>
+                <p class="pair-meta">URI Pairing: <code id="qr-uri-a">-</code></p>
+                <p class="pair-meta">Perintah Langsung: <code id="termux-cmd-a">-</code></p>
                 <!-- Kontrol Simulasi Cepat Tanpa HP Fisik -->
                 <div class="sim-controls">
                     <small>Simulasi Cepat Edge A:</small><br>
@@ -95,8 +101,17 @@
             </div>
 
             <div class="action-buttons">
-                <button type="button" id="btn-start-game" class="primary-btn">START GAME</button>
+                <button type="button" id="btn-start-game" class="primary-btn" disabled>START GAME</button>
                 <button type="button" id="btn-reset-score" class="danger-btn">RESET SCORE</button>
+            </div>
+
+            <!-- QR Code Sesi Umum (Otomatis pilih slot kosong A / B) -->
+            <div class="session-qr-card">
+                <h3>QR Pairing Sesi (Otomatis Slot A / B)</h3>
+                <div class="qr-box">
+                    <canvas id="qr-canvas-session" width="164" height="164"></canvas>
+                </div>
+                <p class="pair-meta">Pemain A &amp; B dapat memindai QR sesi ini atau QR pada kartu masing-masing.</p>
             </div>
         </section>
 
@@ -107,7 +122,7 @@
                 <input type="text" id="input-username-b" value="Player B" maxlength="32" aria-label="Username Player B">
                 <button type="button" id="btn-save-name-b">Simpan Nama</button>
             </div>
-            <p>Status Koneksi: <span id="conn-status-b" class="badge offline">DISCONNECTED</span></p>
+            <p>Status Pemain: <span id="conn-status-b" class="badge offline">WAITING</span></p>
             <p class="score-display">Skor: <strong id="score-b">0</strong></p>
 
             <!-- 1. PILIHAN PERMAINAN (Ronde Aktif / Hasil Ronde) -->
@@ -134,11 +149,13 @@
             <details class="pairing-panel" open>
                 <summary>Pairing &amp; QR Code (PLAYER_B)</summary>
                 <div class="qr-box">
-                    <canvas id="qr-canvas-b" width="140" height="140"></canvas>
+                    <canvas id="qr-canvas-b" width="164" height="164"></canvas>
                 </div>
-                <p class="pair-meta">URI: <code id="qr-uri-b">-</code></p>
-                <p class="pair-meta">Kode Fallback Termux: <code id="pair-code-b">-</code></p>
-                <p class="pair-meta">Perintah Termux: <code id="termux-cmd-b">-</code></p>
+                <p class="pair-meta">Scan QR di atas dengan HP B (atau melalui halaman <code>/pair</code>)</p>
+                <p class="pair-meta">Launcher 1-Perintah Termux: <code id="auto-cmd-b">bash scripts/start_edge.sh B</code></p>
+                <p class="pair-meta">Kode Fallback Manual: <code id="pair-code-b">-</code></p>
+                <p class="pair-meta">URI Pairing: <code id="qr-uri-b">-</code></p>
+                <p class="pair-meta">Perintah Langsung: <code id="termux-cmd-b">-</code></p>
                 <!-- Kontrol Simulasi Cepat Tanpa HP Fisik -->
                 <div class="sim-controls">
                     <small>Simulasi Cepat Edge B:</small><br>

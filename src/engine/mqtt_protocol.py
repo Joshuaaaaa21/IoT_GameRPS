@@ -120,6 +120,17 @@ class TopicBuilder:
     def wildcard_all_player_choices(self) -> str:
         return f"{TOPIC_PREFIX}/{self.session_id}/player/+/choice"
 
+    @staticmethod
+    def pairing_slot(player_id: str) -> str:
+        """Topic for pushing dynamic QR pairing session assignments to a Termux edge listener by slot."""
+        return f"{TOPIC_PREFIX}/pairing/slot/{player_id}"
+
+    @staticmethod
+    def pairing_device(device_id: str) -> str:
+        """Topic for pushing dynamic QR pairing session assignments to a specific device_id."""
+        clean_dev = re.sub(r"[^A-Za-z0-9_-]", "", device_id or "default")
+        return f"{TOPIC_PREFIX}/pairing/device/{clean_dev}"
+
 
 def parse_json_payload(raw_payload: bytes | str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """Safely parse incoming MQTT payload into a JSON dictionary."""

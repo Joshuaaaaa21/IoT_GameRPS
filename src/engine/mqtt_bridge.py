@@ -34,15 +34,44 @@ class EngineMQTTBridge:
         self,
         engine: GameEngine,
         publish_fn: Optional[Callable[[str, str, int, bool], None]] = None,
+        heartbeat_timeout_sec: float = 15.0,
     ) -> None:
         self.engine = engine
         self.topics = TopicBuilder(engine.session_id)
         self._client: Optional[mqtt.Client] = None
         self._publish_fn = publish_fn or self._default_publish
+        self.heartbeat_timeout_sec: float = float(heartbeat_timeout_sec)
         self._seen_msg_ids: set[str] = set()
         self._last_seq: Dict[Tuple[str, str], int] = {}
         self.last_telemetry_features: Dict[str, Dict[str, Any]] = {}
         self.last_error: Optional[str] = None
+
+    def publish_pairing_assignment(
+        self,
+        action: str,
+        session_id: str,
+        player_id: str,
+        username: str = "",
+        device_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Publish dynamic QR pairing assignment over MQTT so a running Termux edge_client
+        in --auto-pair mode automatically joins or leaves the session without manual typing.
+        """
+        payload = {
+            "v": 1,
+            "action": action,
+            "session_id": session_id,
+            "player_id": player_id,
+            "username": username,
+            "device_id": device_id,
+            "timestamp": time.time(),
+        }
+        raw = json.dumps(payload)
+        self._publish_fn(TopicBuilder.pairing_slot(player_id), raw, QOS_CRITICAL, True)
+        if device_id:
+            self._publish_fn(TopicBuilder.pairing_device(device_id), raw, QOS_CRITICAL, True)
+        return payload
 
     def _default_publish(self, topic: str, payload: str, qos: int, retain: bool) -> None:
         if self._client is not None:
@@ -200,10 +229,28 @@ class EngineMQTTBridge:
         return payload
 
     def tick(self, now: Optional[float] = None) -> bool:
-        """Periodic check for round countdown expiration. Returns True if timeout triggered."""
-        result = self.engine.check_timeout(now=now)
+        """Periodic check for round countdown expiration and player telemetry heartbeat timeouts."""
+        current_time = time.time() if now is None else float(now)
+        state_changed = False
+
+        if self.heartbeat_timeout_sec > 0:
+            for pid, p_state in self.engine.players.items():
+                if p_state.connected:
+                    feats = self.last_telemetry_features.get(pid, {})
+                    last_ts = feats.get("last_telemetry_ts")
+                    if last_ts is not None and (current_time - float(last_ts)) > self.heartbeat_timeout_sec:
+                        self.engine.set_player_connection(pid, False)
+                        feats["diag_status"] = "OFFLINE"
+                        feats["diag_reason"] = "HEARTBEAT_TIMEOUT"
+                        state_changed = True
+
+        result = self.engine.check_timeout(now=current_time)
         if result is not None:
             self.publish_result()
+            self.publish_state()
+            return True
+
+        if state_changed:
             self.publish_state()
             return True
         return False

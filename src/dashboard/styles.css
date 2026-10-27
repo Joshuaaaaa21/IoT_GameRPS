@@ -194,3 +194,104 @@ button {
     margin: 2px 2px 2px 0;
     font-size: 0.75rem;
 }
+
+.session-box {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.pair-link-btn, .file-btn {
+    display: inline-block;
+    padding: 6px 10px;
+    border: 1px solid #888;
+    background: #f0f4ff;
+    color: #1a4d8f;
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.session-qr-card {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid #ddd;
+    text-align: center;
+}
+
+.session-qr-card h3 {
+    margin: 0 0 6px;
+    font-size: 0.95rem;
+}
+
+.pair-container {
+    max-width: 600px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.wrap-btns {
+    flex-wrap: wrap;
+}
+
+.camera-box {
+    margin: 10px 0;
+    text-align: center;
+    background: #111;
+    color: #fff;
+    padding: 8px;
+}
+
+.camera-box video {
+    width: 100%;
+    max-width: 320px;
+    border: 2px solid #4caf50;
+}
+
+.manual-fallback-box, .form-row {
+    margin: 10px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.manual-fallback-box input, .form-row input, .form-row select {
+    padding: 8px;
+    font-size: 0.95rem;
+}
+
+.termux-bridge-box {
+    margin-top: 12px;
+    padding: 10px;
+    background: #f4f6f8;
+    border: 1px solid #ccc;
+}
+
+.termux-bridge-box h3 {
+    margin: 0 0 6px;
+    font-size: 0.95rem;
+}
+
+.cmd-copy-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.cmd-copy-row code {
+    flex: 1;
+    background: #222;
+    color: #0f0;
+    padding: 6px 8px;
+    font-size: 0.82rem;
+    overflow-x: auto;
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
