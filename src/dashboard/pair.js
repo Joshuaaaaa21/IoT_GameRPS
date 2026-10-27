@@ -12,6 +12,72 @@ let assignedSession = localStorage.getItem(STORAGE_KEY_SESSION) || null;
 let videoStream = null;
 let scanTimer = null;
 
+function displaySlot(slot) {
+    if (slot === "PLAYER_A") return "Player A";
+    if (slot === "PLAYER_B") return "Player B";
+    return slot || "-";
+}
+
+function displayGameState(state) {
+    const labels = {
+        WAITING_FOR_PLAYERS: "Waiting for players",
+        READY: "Ready to play",
+        COUNTDOWN: "Get ready...",
+        FINISHED: "Round finished"
+    };
+    return labels[state] || state;
+}
+
+function displayPairingError(reason) {
+    const messages = {
+        SESSION_ENDED: "This session has ended. Ask the host to start a new one.",
+        EXPIRED_PAIRING_TOKEN: "This QR code has expired. Scan the latest code.",
+        INVALID_PAIRING_TOKEN: "This QR code is no longer valid. Scan the latest code.",
+        SLOT_ALREADY_OCCUPIED: "That player slot is already taken. Choose the other player."
+    };
+    return messages[reason] || String(reason || "Unknown error").replace(/_/g, " ").toLowerCase();
+}
+
+function displayGesture(gesture) {
+    const labels = { LEFT: "Left", RIGHT: "Right", UP: "Up", WEAK: "Weak", STILL: "Still" };
+    return labels[gesture] || gesture || "-";
+}
+
+function renderMoveDisplay(element, choice) {
+    if (!element) return;
+    const normalized = String(choice || "").toUpperCase();
+    const moves = {
+        ROCK: ["move-rock", "Rock"],
+        PAPER: ["move-paper", "Paper"],
+        SCISSORS: ["move-scissors", "Scissors"]
+    };
+    const move = moves[normalized];
+    element.replaceChildren();
+
+    if (!move) {
+        element.textContent = normalized === "LOCKED" ? "Locked in" : (choice || "-");
+        return;
+    }
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "move-art");
+    svg.setAttribute("viewBox", "0 0 64 64");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", move[1]);
+    const symbol = document.getElementById(move[0]);
+    if (!symbol) {
+        element.textContent = move[1];
+        return;
+    }
+    for (const shape of symbol.children) {
+        svg.append(shape.cloneNode(true));
+    }
+
+    const label = document.createElement("span");
+    label.textContent = move[1];
+    element.append(svg, label);
+}
+
 function getOrCreateDeviceId() {
     let devId = localStorage.getItem(STORAGE_KEY_DEVICE);
     if (!devId) {
@@ -38,11 +104,60 @@ function normalizeSlotOption(raw) {
     return "AUTO";
 }
 
+function updateActiveSessionQr(data) {
+    const message = document.getElementById("active-session-qr-message");
+    const wrapper = document.getElementById("active-session-qr-wrap");
+    const canvas = document.getElementById("qr-canvas-active-session");
+    const sessionId = document.getElementById("active-session-qr-id");
+    const pairing = data && data.pairing;
+    const matrix = pairing && pairing.session_qr_matrix;
+    const active = data && data.session_active !== false;
+    const hasQr = active && Array.isArray(matrix) && matrix.length > 0;
+
+    wrapper.hidden = !hasQr;
+    sessionId.hidden = !hasQr;
+    sessionId.textContent = hasQr ? `Game code: ${data.session_id}` : "";
+    if (!hasQr) {
+        canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+        delete canvas.dataset.sessionId;
+        message.textContent = active
+            ? "The game QR is not available yet. Try again in a moment."
+            : "This game has ended. Ask the host to start a new session.";
+        return;
+    }
+
+    message.textContent = "Let another phone scan this code to join the same game.";
+    if (canvas.dataset.sessionId === data.session_id) return;
+    canvas.dataset.sessionId = data.session_id;
+    const ctx = canvas.getContext("2d");
+    const size = canvas.width;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, size, size);
+
+    const quietZone = 4;
+    const modules = matrix.length;
+    const cellSize = Math.floor(size / (modules + quietZone * 2));
+    const offset = Math.floor((size - cellSize * modules) / 2);
+    ctx.fillStyle = "#211b27";
+    for (let row = 0; row < modules; row++) {
+        for (let column = 0; column < modules; column++) {
+            if (matrix[row][column]) {
+                ctx.fillRect(
+                    offset + column * cellSize,
+                    offset + row * cellSize,
+                    cellSize,
+                    cellSize
+                );
+            }
+        }
+    }
+}
+
 /**
  * Parse a scanned QR string (URL, motionrps:// URI, or compact session:slot code)
  * and populate the form fields.
  */
-function applyScannedQrText(rawText, sourceLabel = "QR Scan") {
+function applyScannedQrText(rawText) {
     const cleaned = (rawText || "").trim();
     if (!cleaned) return false;
 
@@ -69,7 +184,7 @@ function applyScannedQrText(rawText, sourceLabel = "QR Scan") {
     }
 
     if (!session) {
-        showFeedback("QR tidak berisi Session ID yang valid.", true);
+        showFeedback("Invalid QR code. Please scan again.", true);
         return false;
     }
 
@@ -81,11 +196,11 @@ function applyScannedQrText(rawText, sourceLabel = "QR Scan") {
 
     const resText = document.getElementById("scan-result-text");
     const resBadge = document.getElementById("scan-status-badge");
-    resText.textContent = `${session} (${slot === "AUTO" ? "Slot Otomatis" : slot})`;
-    resBadge.textContent = "QR OK";
+    resText.textContent = `${session} (${slot === "AUTO" ? "Automatic" : displaySlot(slot)})`;
+    resBadge.textContent = "QR ready";
     resBadge.className = "badge online";
 
-    showFeedback(`${sourceLabel} berhasil membaca sesi '${session}'. Silakan konfirmasi username dan klik Join Session.`);
+    showFeedback("Session found. Enter your name and join.");
     return true;
 }
 
@@ -107,7 +222,7 @@ async function stopCameraScanner() {
 async function startLiveCameraScanner() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         showFeedback(
-            "Kamera live dibatasi oleh browser pada koneksi HTTP non-HTTPS. Gunakan tombol '📸 Ambil Foto QR' atau scan dari aplikasi Kamera bawaan HP.",
+            "Camera access is unavailable in this browser. Choose a QR photo or use your phone camera.",
             true
         );
         return;
@@ -133,7 +248,7 @@ async function startLiveCameraScanner() {
                     const barcodes = await detector.detect(video);
                     if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
                         await stopCameraScanner();
-                        applyScannedQrText(barcodes[0].rawValue, "Kamera Live");
+                        applyScannedQrText(barcodes[0].rawValue);
                     }
                 } catch (err) {
                     // Ignore transient frame errors
@@ -141,10 +256,10 @@ async function startLiveCameraScanner() {
             }, 300);
         } else {
             document.getElementById("camera-hint").textContent =
-                "Browser ini tidak mendukung BarcodeDetector native. Gunakan aplikasi Kamera bawaan HP untuk memindai QR atau klik '🔄 Ambil Sesi Aktif Server'.";
+                "QR scanning is not supported in this browser. Use your phone camera to scan the code.";
         }
     } catch (err) {
-        showFeedback("Izin kamera ditolak atau tidak tersedia: " + err.message, true);
+        showFeedback("Camera permission was denied or is unavailable: " + err.message, true);
     }
 }
 
@@ -158,28 +273,31 @@ async function handleQrPhotoInput(event) {
             const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
             const codes = await detector.detect(bitmap);
             if (codes && codes.length > 0 && codes[0].rawValue) {
-                applyScannedQrText(codes[0].rawValue, "Foto QR");
+                applyScannedQrText(codes[0].rawValue);
                 return;
             }
-            showFeedback("QR Code tidak terdeteksi di dalam foto. Mengambil sesi aktif dari server sebagai fallback...", true);
+            showFeedback("Could not read the QR code. Try another photo or use the active session.", true);
         } catch (err) {
             // Fall through to active session fetch
         }
     }
-    await fetchActiveSessionFromServer("Fallback Kamera");
+    await fetchActiveSessionFromServer();
 }
 
-async function fetchActiveSessionFromServer(sourceLabel = "Server") {
+async function fetchActiveSessionFromServer() {
     try {
         const res = await fetch("/api/state");
         const data = await res.json();
-        if (data && data.pairing && data.pairing.session_pair_url) {
-            applyScannedQrText(data.pairing.session_pair_url, sourceLabel);
+        updateActiveSessionQr(data);
+        if (data && data.session_active === false) {
+            showFeedback("This game has ended. Ask the host to start a new session.", true);
+        } else if (data && data.pairing && data.pairing.session_pair_url) {
+            applyScannedQrText(data.pairing.session_pair_url);
         } else if (data && data.session_id) {
-            applyScannedQrText(data.session_id, sourceLabel);
+            applyScannedQrText(data.session_id);
         }
     } catch (err) {
-        showFeedback("Gagal mengambil sesi dari server.", true);
+        showFeedback("Could not get the active session from the server.", true);
     }
 }
 
@@ -189,7 +307,7 @@ async function joinSession() {
     const slotChoice = document.getElementById("select-player-slot").value;
 
     if (!rawCode) {
-        showFeedback("Masukkan atau scan Session ID terlebih dahulu!", true);
+        showFeedback("Scan a QR code or enter a session code first.", true);
         return;
     }
 
@@ -217,7 +335,7 @@ async function joinSession() {
         });
         const data = await res.json();
         if (!data.ok) {
-            showFeedback(`Gagal bergabung: ${data.reason || data.error}`, true);
+            showFeedback(`Could not join: ${displayPairingError(data.reason || data.error)}`, true);
             return;
         }
 
@@ -242,10 +360,10 @@ async function joinSession() {
             document.getElementById("mobile-direct-cmd").textContent = data.termux_cmd;
         }
 
-        showFeedback(`Berhasil bergabung ke sesi '${assignedSession}' sebagai ${assignedSlot} (${data.username})!`);
+        showFeedback(`You joined as ${displaySlot(assignedSlot)}. Have fun!`);
         await refreshMobileStatus();
     } catch (err) {
-        showFeedback("Gagal menghubungi server untuk Join Session.", true);
+        showFeedback("Could not contact the server to join the session.", true);
     }
 }
 
@@ -263,16 +381,16 @@ async function leaveSession() {
         });
         const data = await res.json();
         if (data.ok) {
-            showFeedback(`Berhasil keluar (disconnect) dari slot ${assignedSlot}.`);
+            showFeedback("You have left the game.");
             assignedSlot = null;
             localStorage.removeItem(STORAGE_KEY_SLOT);
             document.getElementById("btn-leave-session").disabled = true;
             await refreshMobileStatus();
         } else {
-            showFeedback(`Gagal keluar sesi: ${data.reason}`, true);
+            showFeedback(`Could not leave the session: ${displayPairingError(data.reason)}`, true);
         }
     } catch (err) {
-        showFeedback("Gagal menghubungi server untuk Leave Session.", true);
+        showFeedback("Could not contact the server to leave the session.", true);
     }
 }
 
@@ -281,7 +399,8 @@ async function refreshMobileStatus() {
         const res = await fetch("/api/state");
         const data = await res.json();
 
-        document.getElementById("mobile-game-state").textContent = data.state;
+        updateActiveSessionQr(data);
+        document.getElementById("mobile-game-state").textContent = displayGameState(data.state);
         document.getElementById("mobile-round-id").textContent = data.round_id;
 
         const targetSlot = assignedSlot || (
@@ -290,34 +409,36 @@ async function refreshMobileStatus() {
                 : null
         );
 
-        document.getElementById("assigned-slot-display").textContent = targetSlot || "Belum dipilih";
+        document.getElementById("assigned-slot-display").textContent = displaySlot(targetSlot === "AUTO" ? null : targetSlot);
         document.getElementById("assigned-session-display").textContent = data.session_id;
 
         if (targetSlot && data.players && data.players[targetSlot]) {
             const p = data.players[targetSlot];
             const webEl = document.getElementById("web-pair-status");
             if (p.web_paired) {
-                webEl.textContent = `PAIRED (${p.username})`;
+                webEl.textContent = "Connected";
                 webEl.className = "badge online";
                 document.getElementById("btn-leave-session").disabled = false;
             } else {
-                webEl.textContent = "BELUM JOIN WEB";
+                webEl.textContent = "Not joined";
                 webEl.className = "badge offline";
             }
 
             const sensorEl = document.getElementById("sensor-conn-status");
             if (p.connected) {
-                sensorEl.textContent = "READY / ONLINE (Telemetry Sensor Aktif)";
+                sensorEl.textContent = "Active";
                 sensorEl.className = "badge online";
             } else {
-                sensorEl.textContent = "MENUNGGU SENSOR TERMUX";
+                sensorEl.textContent = "Waiting for sensor";
                 sensorEl.className = "badge warn";
             }
 
             document.getElementById("mobile-score").textContent = p.score;
-            document.getElementById("mobile-last-gesture").textContent = p.last_gesture || "-";
-            document.getElementById("mobile-round-choice").textContent =
-                p.choice ? p.choice : (p.has_chosen ? "LOCKED" : "-");
+            document.getElementById("mobile-last-gesture").textContent = displayGesture(p.last_gesture);
+            renderMoveDisplay(
+                document.getElementById("mobile-round-choice"),
+                p.choice || (p.has_chosen ? "LOCKED" : "-")
+            );
             document.getElementById("mobile-accel").textContent =
                 Array.isArray(p.accel) ? p.accel.map((v) => Number(v || 0).toFixed(2)).join(", ") : "0.00, 0.00, 0.00";
             document.getElementById("mobile-diag-reason").textContent = p.diag_reason || "NO_TELEMETRY_YET";
@@ -337,7 +458,7 @@ function copyTextFromElement(elId) {
     const el = document.getElementById(elId);
     if (!el || !navigator.clipboard) return;
     navigator.clipboard.writeText(el.textContent.trim());
-    showFeedback("Perintah Termux berhasil disalin ke clipboard HP!");
+    showFeedback("Command copied to clipboard!");
 }
 
 // Initialize page on load
@@ -351,16 +472,16 @@ function copyTextFromElement(elId) {
     // Check if opened directly from QR Code URL (?v=1&session=...&player=...&pt=...)
     const params = new URLSearchParams(window.location.search);
     if (params.has("session") || params.has("session_id")) {
-        applyScannedQrText(window.location.href, "URL QR Kamera");
+        applyScannedQrText(window.location.href);
     } else {
-        fetchActiveSessionFromServer("Auto-Detect Server");
+        fetchActiveSessionFromServer();
     }
 
     document.getElementById("btn-scan-qr").addEventListener("click", startLiveCameraScanner);
     document.getElementById("btn-stop-camera").addEventListener("click", stopCameraScanner);
     document.getElementById("input-qr-photo").addEventListener("change", handleQrPhotoInput);
     document.getElementById("btn-fetch-active-session").addEventListener("click", () => {
-        fetchActiveSessionFromServer("Server Aktif");
+        fetchActiveSessionFromServer();
     });
     document.getElementById("btn-join-session").addEventListener("click", joinSession);
     document.getElementById("btn-leave-session").addEventListener("click", leaveSession);
