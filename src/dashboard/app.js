@@ -177,7 +177,24 @@ function updatePlayerCard(suffix, playerState, outcomeText, pairingData) {
     renderMoveDisplay(document.getElementById(`choice-${suffix}`), choiceDisplay);
     const outcomeEl = document.getElementById(`outcome-${suffix}`);
     const outcome = !actualChoice && simulatedMoves[suffix] ? "" : displayOutcome(outcomeText);
-    outcomeEl.textContent = outcome === "-" ? "" : outcome;
+    if (outcomeEl) {
+        outcomeEl.textContent = outcome === "-" ? "" : outcome;
+        outcomeEl.className = "outcome-tag";
+        outcomeEl.removeAttribute("data-outcome");
+        if (outcome && outcome !== "-") {
+            const norm = String(outcomeText || outcome).toUpperCase();
+            if (norm === "WIN" || norm.includes("WIN") || outcome.toLowerCase().includes("win")) {
+                outcomeEl.classList.add("win");
+                outcomeEl.dataset.outcome = "win";
+            } else if (norm === "LOSE" || norm.includes("LOSE") || outcome.toLowerCase().includes("lose")) {
+                outcomeEl.classList.add("lose");
+                outcomeEl.dataset.outcome = "lose";
+            } else if (norm === "DRAW" || norm.includes("DRAW") || outcome.toLowerCase().includes("draw")) {
+                outcomeEl.classList.add("draw");
+                outcomeEl.dataset.outcome = "draw";
+            }
+        }
+    }
 
     // 2. Live Telemetry & Diagnostic Panel
     const diagStatus = playerState.diag_status || "WAITING";

@@ -35,7 +35,7 @@
         <div style="display: flex; align-items: center; gap: 16px;">
             <h1 id="project-title">Motion RPS</h1>
             <div class="session-meta">
-                <span>Session <strong id="session-id-display">-</strong></span>
+                <span>Session <strong id="session-id-display">#</strong></span>
                 <span id="session-active-badge" class="badge online">Active</span>
             </div>
         </div>
@@ -122,23 +122,23 @@
     </section>
 
     <!-- CONNECTION -->
-    <!-- <section class="status-banner">
+    <section class="status-banner">
         <span class="status-bloom status-bloom-left" aria-hidden="true">❀</span>
-        <div>Connection: <span id="mqtt-status" class="badge">Loading...</span></div>
+        <div style="font-weight: 500;">Connection: <span id="mqtt-status" class="badge">Loading...</span></div>
         <details class="session-url-details">
             <summary>Phone link</summary>
             <code id="session-pair-url-display">-</code>
         </details>
         <div id="error-banner" class="error-text" hidden></div>
         <span class="status-bloom status-bloom-right" aria-hidden="true">❧</span>
-    </section> -->
+    </section>
 
     <!-- Player A | Round controls | Player B -->
     <main class="arena-grid" id="arena">
-        <!-- PLAYER A CARD -->
+        <!-- PLAYER A -->
         <section class="player-card" id="card-player-a">
-            <div class="flex width-full" style="display: flex; width: 100%; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                <!-- <span class="card-bloom card-bloom-a" aria-hidden="true">❀</span> -->
+            <div class="flex width-full" style="display: flex; width: 100%; gap: 12px; align-items: center; margin-bottom: 12px;">
+                <span class="card-bloom card-bloom-a" aria-hidden="true">❀</span>
                 <div class="player-icon" aria-label="Player A">Player A</div>
                 <span id="conn-status-a" class="badge offline">Not joined</span>
             </div>
@@ -152,8 +152,8 @@
 
                 <p class="score-display">Score <strong id="score-a">0</strong></p>
 
-                <span class="outcome-tag" id="outcome-a">-</span>
-                <span class="move-display" id="choice-a" aria-live="polite">-</span>
+                <span class="outcome-tag" id="outcome-a" aria-live="polite"></span>
+                <span class="move-display" id="choice-a" aria-live="polite"></span>
             </div>
 
             <!-- Live sensor data and diagnostics -->
@@ -198,21 +198,54 @@
             </details>
         </section>
 
-        <!-- Game controls -->
+        <!-- GAME CONTROL -->
         <section class="center-panel">
             <span class="card-bloom card-bloom-center" aria-hidden="true">❧</span>
-            <h2>Ready to play?</h2>
-            <p>Status: <strong id="game-state-display">Waiting for players</strong></p>
-            <p>Round: <strong id="round-id-display">0</strong></p>
+
+            <div class="center-panel-header">
+                <div class="panel-eyebrow">
+                    <span class="eyebrow-flower" aria-hidden="true">❀</span>
+                    <span>Match Arena</span>
+                    <span class="eyebrow-flower" aria-hidden="true">❀</span>
+                </div>
+                <h2 class="panel-title">Let's Play!</h2>
+            </div>
+
+            <div class="game-meta-strip">
+                <div class="meta-chip meta-status">
+                    <span class="meta-dot" aria-hidden="true"></span>
+                    <span class="meta-label">Status</span>
+                    <strong id="game-state-display" class="meta-value">Waiting for players</strong>
+                </div>
+                <div class="meta-chip meta-round">
+                    <span class="meta-label">Round</span>
+                    <strong id="round-id-display" class="meta-value">0</strong>
+                </div>
+            </div>
 
             <div class="countdown-box">
-                <span>Starting in</span>
+                <div class="countdown-header">
+                    <span class="countdown-icon" aria-hidden="true">⏳</span>
+                    <span class="countdown-label">Starting in</span>
+                </div>
                 <div id="countdown-display" class="countdown-number">-</div>
             </div>
 
             <div class="result-box">
-                <p>Last result <strong id="round-outcome-display">-</strong></p>
-                <p>Winner <strong id="winner-name-display">-</strong></p>
+                <div class="result-card-header">
+                    <span class="result-badge-title">Round Summary</span>
+                </div>
+                <div class="result-details-grid">
+                    <div class="result-cell">
+                        <span class="result-label">Last result</span>
+                        <strong id="round-outcome-display" class="result-value">-</strong>
+                    </div>
+                    <div class="result-separator" aria-hidden="true"></div>
+                    <div class="result-cell">
+                        <span class="result-label">Winner</span>
+                        <strong id="winner-name-display" class="result-value winner-text">-</strong>
+                    </div>
+                </div>
             </div>
 
             <div class="action-buttons">
@@ -231,10 +264,10 @@
             </div>
         </section>
 
-        <!-- Player B card -->
+        <!-- PLAYER B -->
         <section class="player-card" id="card-player-b">
-            <div class="flex width-full" style="display: flex; width: 100%; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                <!-- <span class="card-bloom card-bloom-b" aria-hidden="true">❀</span> -->
+            <div class="flex width-full" style="display: flex; width: 100%; gap: 12px; align-items: center; margin-bottom: 12px;">
+                <span class="card-bloom card-bloom-b" aria-hidden="true">❀</span>
                 <div class="player-icon" aria-label="Player B">Player B</div>
                 <span id="conn-status-b" class="badge offline">Not joined</span>
             </div>
@@ -248,8 +281,8 @@
                 
                 <p class="score-display">Score <strong id="score-b">0</strong></p>
 
-                <span class="outcome-tag" id="outcome-b">-</span>
-                <span class="move-display" id="choice-b" aria-live="polite">-</span>
+                <span class="outcome-tag" id="outcome-b" aria-live="polite"></span>
+                <span class="move-display" id="choice-b" aria-live="polite"></span>
             </div>
 
             <!-- Live sensor data and diagnostics -->
