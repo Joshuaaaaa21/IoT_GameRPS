@@ -5,6 +5,7 @@ from http.server import ThreadingHTTPServer
 import json
 import os
 import threading
+import time
 import unittest
 from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError
@@ -337,7 +338,7 @@ class TestPairingAndIntegration(unittest.TestCase):
             # Verify /pair HTML page is served
             with urlopen(f"{base_url}/pair") as pair_resp:
                 html_text = pair_resp.read().decode("utf-8")
-                self.assertIn("Scan QR Code Sesi", html_text)
+                self.assertIn("Scan the QR code", html_text)
 
             st = http_get("/api/state")
             self.assertEqual(st["session_id"], "web-test-01")
@@ -391,9 +392,29 @@ class TestPairingAndIntegration(unittest.TestCase):
             http_post("/api/simulate_edge", {"player_id": PLAYER_A, "action": "CONNECT"})
             http_post("/api/simulate_edge", {"player_id": PLAYER_B, "action": "CONNECT"})
 
+            for player_id in (PLAYER_A, PLAYER_B):
+                ctx.bridge.last_telemetry_features[player_id]["last_telemetry_ts"] = time.time() - 20
             st_ready = http_get("/api/state")
             self.assertEqual(st_ready["players"][PLAYER_A]["pairing_status"], "READY")
+            self.assertTrue(st_ready["players"][PLAYER_A]["connected"])
+            self.assertTrue(st_ready["players"][PLAYER_B]["connected"])
             self.assertEqual(st_ready["state"], "READY")
+            self.assertGreater(
+                ctx.bridge.last_telemetry_features[PLAYER_A]["last_telemetry_ts"],
+                time.time() - 2,
+            )
+
+            status, rename_res = http_post("/api/command", {
+                "command": "SET_USERNAME",
+                "player_id": PLAYER_A,
+                "username": "Siti 2",
+            })
+            self.assertEqual(status, 200)
+            self.assertTrue(rename_res["ok"])
+            self.assertEqual(
+                http_get("/api/state")["players"][PLAYER_A]["username"],
+                "Siti 2",
+            )
 
             http_post("/api/command", {"command": "START_GAME"})
             http_post("/api/simulate_edge", {"player_id": PLAYER_A, "action": "GESTURE", "gesture": "LEFT"})
@@ -409,6 +430,17 @@ class TestPairingAndIntegration(unittest.TestCase):
             self.assertTrue(end_res["ok"])
             st_ended = http_get("/api/state")
             self.assertFalse(st_ended["session_active"])
+            status, rename_res = http_post("/api/command", {
+                "command": "SET_USERNAME",
+                "player_id": PLAYER_A,
+                "username": "Changed after end",
+            })
+            self.assertEqual(status, 409)
+            self.assertEqual(rename_res["reason"], "SESSION_ENDED")
+            self.assertEqual(
+                http_get("/api/state")["players"][PLAYER_A]["username"],
+                "Siti 2",
+            )
         finally:
             server.shutdown()
             server.server_close()

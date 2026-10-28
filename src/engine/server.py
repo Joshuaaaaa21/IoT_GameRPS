@@ -95,6 +95,7 @@ class GameRuntimeContext:
         self.engine = GameEngine(session_id=initial_sid, countdown_seconds=countdown_seconds)
         self.bridge = EngineMQTTBridge(engine=self.engine)
         self.pairing_manager = SessionPairingManager(session_id=initial_sid, ttl_seconds=token_ttl_seconds)
+        self.simulated_players = set()
 
     def resolve_base_url(self, host_header: Optional[str] = None) -> str:
         if self.public_base_url:
@@ -110,6 +111,7 @@ class GameRuntimeContext:
     def create_new_session(self, custom_session_id: Optional[str] = None) -> str:
         with self.lock:
             old_sid = self.engine.session_id
+            self.simulated_players.clear()
             new_sid = custom_session_id.strip() if custom_session_id else generate_session_id("rps")
             for pid in (PLAYER_A, PLAYER_B):
                 self.bridge.publish_pairing_assignment(
@@ -126,6 +128,7 @@ class GameRuntimeContext:
     def end_session(self) -> Dict[str, Any]:
         with self.lock:
             sid = self.engine.session_id
+            self.simulated_players.clear()
             self.pairing_manager.end_session()
             for pid in (PLAYER_A, PLAYER_B):
                 self.engine.set_player_connection(pid, False)
@@ -139,6 +142,29 @@ class GameRuntimeContext:
                 )
             self.bridge.publish_state()
             return {"ok": True, "session_id": sid, "session_active": False}
+
+    def _set_simulated_connection(self, player_id: str, connected: bool) -> tuple[bool, str]:
+        action = "CONNECT" if connected else "DISCONNECT"
+        ok, reason = self.bridge.handle_raw_message(
+            TopicBuilder(self.engine.session_id).player_telemetry(player_id),
+            json.dumps({
+                "session_id": self.engine.session_id,
+                "player_id": player_id,
+                "connected": connected,
+                "motion_rms": 0.0,
+                "rotation_rad": 0.0,
+                "accel": [0.0, 0.0, 9.81],
+                "gyro": [0.0, 0.0, 0.0],
+                "diag_status": "WAITING" if connected else "OFFLINE",
+                "diag_reason": f"SIMULATED_{action}",
+            }),
+        )
+        if ok:
+            if connected:
+                self.simulated_players.add(player_id)
+            else:
+                self.simulated_players.discard(player_id)
+        return ok, reason
 
     def join_pairing(
         self,
@@ -315,6 +341,9 @@ class GameRuntimeContext:
 
     def build_full_dashboard_payload(self, host_header: Optional[str] = None) -> Dict[str, Any]:
         with self.lock:
+            if self.pairing_manager.session_active:
+                for player_id in tuple(self.simulated_players):
+                    self._set_simulated_connection(player_id, True)
             self.bridge.tick()
             snapshot = self.engine.get_state_snapshot()
             self.bridge._enrich_players_with_telemetry(snapshot)
@@ -478,6 +507,15 @@ def create_http_handler(ctx: GameRuntimeContext):
                 topics = TopicBuilder(ctx.engine.session_id)
 
                 if path == "/api/command":
+                    if (
+                        str(body.get("command", "")).strip().upper() == "SET_USERNAME"
+                        and not ctx.pairing_manager.session_active
+                    ):
+                        self._send_json(
+                            {"ok": False, "reason": "SESSION_ENDED"},
+                            HTTPStatus.CONFLICT,
+                        )
+                        return
                     payload = dict(body)
                     payload["session_id"] = ctx.engine.session_id
                     ok, reason = ctx.bridge.handle_raw_message(
@@ -491,19 +529,9 @@ def create_http_handler(ctx: GameRuntimeContext):
                     player_id = str(body.get("player_id", PLAYER_A))
                     action = str(body.get("action", "CONNECT")).upper()
                     if action in ("CONNECT", "DISCONNECT"):
-                        ok, reason = ctx.bridge.handle_raw_message(
-                            topics.player_telemetry(player_id),
-                            json.dumps({
-                                "session_id": ctx.engine.session_id,
-                                "player_id": player_id,
-                                "connected": (action == "CONNECT"),
-                                "motion_rms": 0.0,
-                                "rotation_rad": 0.0,
-                                "accel": [0.0, 0.0, 9.81],
-                                "gyro": [0.0, 0.0, 0.0],
-                                "diag_status": "WAITING" if action == "CONNECT" else "OFFLINE",
-                                "diag_reason": "SIMULATED_CONNECT" if action == "CONNECT" else "SIMULATED_DISCONNECT",
-                            }),
+                        ok, reason = ctx._set_simulated_connection(
+                            player_id,
+                            connected=(action == "CONNECT"),
                         )
                         self._send_json({"ok": ok, "reason": reason})
                         return

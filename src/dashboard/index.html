@@ -1,171 +1,329 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Motion RPS IoT — Dashboard</title>
+    <title>Motion RPS — Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+    <!-- CARDS SVG -->
+    <svg class="icon-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <symbol id="move-rock" viewBox="0 0 64 64">
+            <path d="M17 29c0-3 2-5 5-5h2v-4c0-3 5-4 7-1l2 3v-4c0-3 5-4 7-1l2 4c1-3 6-2 7 1l2 6 3 3c2 2 3 5 2 8l-3 11c-1 4-4 7-9 7H29c-4 0-7-2-9-5l-6-10c-2-3-1-7 2-9l2-1v-3Z" fill="currentColor" opacity=".22"/>
+            <path d="M17 29c0-3 2-5 5-5h2v-4c0-3 5-4 7-1l2 3v-4c0-3 5-4 7-1l2 4c1-3 6-2 7 1l2 6 3 3c2 2 3 5 2 8l-3 11c-1 4-4 7-9 7H29c-4 0-7-2-9-5l-6-10c-2-3-1-7 2-9l2-1v-3Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/>
+            <path d="M24 24v9m9-11v10m9-8v8m8-3v4M23 39l7 5h14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="3"/>
+        </symbol>
+        <symbol id="move-paper" viewBox="0 0 64 64">
+            <path d="M16 31V15c0-4 6-4 6 0v13-18c0-4 6-4 6 0v18-22c0-4 6-4 6 0v22-19c0-4 6-4 6 0v21l3-7c2-4 8-2 6 3l-6 17c-2 6-6 9-12 9h-5c-5 0-8-3-10-7l-6-11c-2-4 3-7 6-4l4 5Z" fill="currentColor" opacity=".22"/>
+            <path d="M16 31V15c0-4 6-4 6 0v13-18c0-4 6-4 6 0v18-22c0-4 6-4 6 0v22-19c0-4 6-4 6 0v21l3-7c2-4 8-2 6 3l-6 17c-2 6-6 9-12 9h-5c-5 0-8-3-10-7l-6-11c-2-4 3-7 6-4l4 5Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/>
+            <path d="M22 28v8m6-8v9m6-9v9m8-8v9" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2.5"/>
+        </symbol>
+        <symbol id="move-scissors" viewBox="0 0 64 64">
+            <path d="m27 30 1-19c0-4 6-4 6 0l1 18 2-21c0-4 6-4 6 0l-1 27 5-7c3-4 8 0 5 4L42 49c-3 5-7 8-13 8h-4c-5 0-9-3-11-7l-5-10c-2-4 3-7 6-4l8 7 4-5c2-3 5-5 8-7l8-6c4-3 8 2 4 5l-13 10-7-1-7-5Z" fill="currentColor" opacity=".22"/>
+            <path d="m27 30 1-19c0-4 6-4 6 0l1 18 2-21c0-4 6-4 6 0l-1 27 5-7c3-4 8 0 5 4L42 49c-3 5-7 8-13 8h-4c-5 0-9-3-11-7l-5-10c-2-4 3-7 6-4l8 7 4-5c2-3 5-5 8-7l8-6c4-3 8 2 4 5l-13 10-7-1-7-5Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/>
+            <path d="m34 29 1 11m7-12-2 10" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2.5"/>
+        </symbol>
+    </svg>
+
+    <!-- TOP BAR -->
     <header class="top-bar">
-        <div>
-            <h1 id="project-title">Motion RPS IoT</h1>
-            <p class="subtitle">Rock Paper Scissors Berbasis Sensor Gerak HP &amp; MQTT</p>
+        <!-- LOGO -->
+        <div style="display: flex; align-items: center; gap: 16px;">
+            <h1 id="project-title">Motion RPS</h1>
+            <div class="session-meta">
+                <span>Session <strong id="session-id-display">#</strong></span>
+                <span id="session-active-badge" class="badge online">Active</span>
+            </div>
         </div>
+
         <div class="session-box">
-            <span>Session ID: <strong id="session-id-display">-</strong></span>
-            <span id="session-active-badge" class="badge online">ACTIVE</span>
-            <button id="btn-new-session" type="button" class="primary-btn">Buat Session Baru</button>
-            <button id="btn-end-session" type="button" class="danger-btn">Akhiri Sesi</button>
-            <a href="/pair" target="_blank" class="pair-link-btn">📱 Buka Halaman Pairing HP (/pair)</a>
+            <nav class="session-actions" aria-label="Session actions">
+                <button id="btn-new-session" type="button" class="primary-btn">New session</button>
+                <button id="btn-end-session" type="button" class="danger-btn">End session</button>
+                <a href="/pair" target="_blank" class="pair-link-btn">
+                    Connect phones
+                    <span class="connect-flower" aria-hidden="true">❀</span>
+                </a>
+            </nav>
         </div>
     </header>
 
-    <!-- Status MQTT & Error Bar -->
-    <section class="status-banner">
-        <div>Status MQTT: <span id="mqtt-status" class="badge">Memuat...</span></div>
-        <div>URL Pairing HP (LAN): <code id="session-pair-url-display">-</code></div>
-        <div id="error-banner" class="error-text" hidden></div>
+    <!-- HERO -->
+    <section class="hero-banner" aria-labelledby="hero-title">
+        <div class="hero-copy">
+            <!-- <p class="hero-eyebrow"><span aria-hidden="true">❀</span> ROCK PAPER SCISSORS</p> -->
+            <h2 id="hero-title">Shake it.<br>Make your move.</h2>
+            <p>Challenge a friend to a round of Rock, Paper, Scissors.</p>
+            <a class="hero-cta" href="#arena">Play a round <span aria-hidden="true">↘</span></a>
+            <!-- <div class="hero-notes" aria-label="Game details">
+                <span>Two players</span>
+                <span>Rock Paper Scissors</span>
+            </div> -->
+        </div>
+        <div class="hero-art" aria-hidden="true">
+            <div class="hero-orbit hero-orbit-back"></div>
+            <div class="hero-orbit hero-orbit-front"></div>
+            <svg class="hero-flower hero-flower-one" viewBox="0 0 120 120">
+                <g fill="#c6b3dc" stroke="#88739e" stroke-width="2">
+                    <ellipse cx="60" cy="31" rx="14" ry="25"/>
+                    <ellipse cx="60" cy="31" rx="14" ry="25" transform="rotate(60 60 60)"/>
+                    <ellipse cx="60" cy="31" rx="14" ry="25" transform="rotate(120 60 60)"/>
+                    <ellipse cx="60" cy="31" rx="14" ry="25" transform="rotate(180 60 60)"/>
+                    <ellipse cx="60" cy="31" rx="14" ry="25" transform="rotate(240 60 60)"/>
+                    <ellipse cx="60" cy="31" rx="14" ry="25" transform="rotate(300 60 60)"/>
+                </g>
+                <circle cx="60" cy="60" r="13" fill="#e9d99b" stroke="#88739e" stroke-width="2"/>
+            </svg>
+            <svg class="hero-flower hero-flower-two" viewBox="0 0 120 120">
+                <g fill="#d9c9e8" stroke="#829477" stroke-width="2">
+                    <ellipse cx="60" cy="31" rx="13" ry="23"/>
+                    <ellipse cx="60" cy="31" rx="13" ry="23" transform="rotate(60 60 60)"/>
+                    <ellipse cx="60" cy="31" rx="13" ry="23" transform="rotate(120 60 60)"/>
+                    <ellipse cx="60" cy="31" rx="13" ry="23" transform="rotate(180 60 60)"/>
+                    <ellipse cx="60" cy="31" rx="13" ry="23" transform="rotate(240 60 60)"/>
+                    <ellipse cx="60" cy="31" rx="13" ry="23" transform="rotate(300 60 60)"/>
+                </g>
+                <circle cx="60" cy="60" r="12" fill="#f3e5b7" stroke="#829477" stroke-width="2"/>
+            </svg>
+            <div class="hero-move-card hero-move-rock">
+                <span>01</span>
+                <svg viewBox="0 0 64 64">
+                    <path d="M17 29c0-3 2-5 5-5h2v-4c0-3 5-4 7-1l2 3v-4c0-3 5-4 7-1l2 4c1-3 6-2 7 1l2 6 3 3c2 2 3 5 2 8l-3 11c-1 4-4 7-9 7H29c-4 0-7-2-9-5l-6-10c-2-3-1-7 2-9l2-1v-3Z" fill="currentColor" opacity=".18"/>
+                    <path d="M17 29c0-3 2-5 5-5h2v-4c0-3 5-4 7-1l2 3v-4c0-3 5-4 7-1l2 4c1-3 6-2 7 1l2 6 3 3c2 2 3 5 2 8l-3 11c-1 4-4 7-9 7H29c-4 0-7-2-9-5l-6-10c-2-3-1-7 2-9l2-1v-3Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/>
+                    <path d="M24 24v9m9-11v10m9-8v8m8-3v4M23 39l7 5h14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="3"/>
+                </svg>
+                <strong>Rock</strong>
+            </div>
+            <div class="hero-move-card hero-move-paper">
+                <span>02</span>
+                <svg viewBox="0 0 64 64">
+                    <path d="M16 31V15c0-4 6-4 6 0v13-18c0-4 6-4 6 0v18-22c0-4 6-4 6 0v22-19c0-4 6-4 6 0v21l3-7c2-4 8-2 6 3l-6 17c-2 6-6 9-12 9h-5c-5 0-8-3-10-7l-6-11c-2-4 3-7 6-4l4 5Z" fill="currentColor" opacity=".18"/>
+                    <path d="M16 31V15c0-4 6-4 6 0v13-18c0-4 6-4 6 0v18-22c0-4 6-4 6 0v22-19c0-4 6-4 6 0v21l3-7c2-4 8-2 6 3l-6 17c-2 6-6 9-12 9h-5c-5 0-8-3-10-7l-6-11c-2-4 3-7 6-4l4 5Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/>
+                    <path d="M22 28v8m6-8v9m6-9v9m8-8v9" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2.5"/>
+                </svg>
+                <strong>Paper</strong>
+            </div>
+            <div class="hero-move-card hero-move-scissors">
+                <span>03</span>
+                <svg viewBox="0 0 64 64">
+                    <path d="m27 30 1-19c0-4 6-4 6 0l1 18 2-21c0-4 6-4 6 0l-1 27 5-7c3-4 8 0 5 4L42 49c-3 5-7 8-13 8h-4c-5 0-9-3-11-7l-5-10c-2-4 3-7 6-4l8 7 4-5c2-3 5-5 8-7l8-6c4-3 8 2 4 5l-13 10-7-1-7-5Z" fill="currentColor" opacity=".18"/>
+                    <path d="m27 30 1-19c0-4 6-4 6 0l1 18 2-21c0-4 6-4 6 0l-1 27 5-7c3-4 8 0 5 4L42 49c-3 5-7 8-13 8h-4c-5 0-9-3-11-7l-5-10c-2-4 3-7 6-4l8 7 4-5c2-3 5-5 8-7l8-6c4-3 8 2 4 5l-13 10-7-1-7-5Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/>
+                    <path d="m34 29 1 11m7-12-2 10" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2.5"/>
+                </svg>
+                <strong>Scissors</strong>
+            </div>
+            <div class="hero-spark hero-spark-one">❀</div>
+            <div class="hero-spark hero-spark-two">❧</div>
+        </div>
     </section>
 
-    <!-- Arena Permainan: Pemain A | Kontrol Ronde | Pemain B -->
-    <main class="arena-grid">
-        <!-- PLAYER A CARD -->
+    <!-- CONNECTION -->
+    <section class="status-banner">
+        <span class="status-bloom status-bloom-left" aria-hidden="true">❀</span>
+        <div style="font-weight: 500;">Connection: <span id="mqtt-status" class="badge">Loading...</span></div>
+        <details class="session-url-details">
+            <summary>Phone link</summary>
+            <code id="session-pair-url-display">-</code>
+        </details>
+        <div id="error-banner" class="error-text" hidden></div>
+        <span class="status-bloom status-bloom-right" aria-hidden="true">❧</span>
+    </section>
+
+    <!-- Player A | Round controls | Player B -->
+    <main class="arena-grid" id="arena">
+        <!-- PLAYER A -->
         <section class="player-card" id="card-player-a">
-            <div class="player-icon" aria-label="Ikon Pemain A">📱 A</div>
-            <div class="username-row">
-                <input type="text" id="input-username-a" value="Player A" maxlength="32" aria-label="Username Player A">
-                <button type="button" id="btn-save-name-a">Simpan Nama</button>
+            <div class="flex width-full" style="display: flex; width: 100%; gap: 12px; align-items: center; margin-bottom: 12px;">
+                <span class="card-bloom card-bloom-a" aria-hidden="true">❀</span>
+                <div class="player-icon" aria-label="Player A">Player A</div>
+                <span id="conn-status-a" class="badge offline">Not joined</span>
             </div>
-            <p>Status Pemain: <span id="conn-status-a" class="badge offline">WAITING</span></p>
-            <p class="score-display">Skor: <strong id="score-a">0</strong></p>
+            
+            <div class="center-container" style="margin-bottom: 32px;">
+                <div class="username-row">
+                    <input type="text" id="input-username-a" value="Player A" maxlength="32" aria-label="Player A name">
+                    <button type="button" id="btn-save-name-a">Save</button>
+                </div>
+                <span id="save-name-status-a" class="save-name-status" role="status" aria-live="polite"></span>
 
-            <!-- 1. PILIHAN PERMAINAN (Ronde Aktif / Hasil Ronde) -->
-            <div class="choice-box">
-                <span>Pilihan Ronde: <strong id="choice-a">-</strong></span>
-                <span class="outcome-tag" id="outcome-a">-</span>
+                <p class="score-display">Score <strong id="score-a">0</strong></p>
+
+                <span class="outcome-tag" id="outcome-a" aria-live="polite"></span>
+                <span class="move-display" id="choice-a" aria-live="polite"></span>
             </div>
 
-            <!-- 2. LIVE TELEMETRY & DIAGNOSTIC PANEL (Selalu aktif walau belum START GAME) -->
-            <div class="telemetry-panel">
+            <!-- Live sensor data and diagnostics -->
+            <details class="telemetry-panel">
+                <summary>Sensor details</summary>
                 <div class="telemetry-header">
-                    <strong>Live Sensor &amp; Diagnostik (PLAYER_A)</strong>
+                    <strong>Player A sensor</strong>
                     <span id="diag-status-a" class="badge">WAITING</span>
                 </div>
-                <p class="diag-row">Gestur Terakhir: <strong id="last-gesture-a">-</strong> (Sumbu: <code id="axis-a">-</code>)</p>
-                <p class="diag-row">Alasan / Status: <code id="diag-reason-a">NO_TELEMETRY_YET</code></p>
-                <p class="diag-row">Accel (X, Y, Z): <code id="accel-a">0.00, 0.00, 0.00</code> m/s²</p>
-                <p class="diag-row">Gyro (X, Y, Z): <code id="gyro-a">0.00, 0.00, 0.00</code> rad/s</p>
-                <p class="diag-row">Fitur: RMS=<code id="rms-a">0.000</code> m/s² | Rot=<code id="rot-a">0.000</code> rad</p>
-                <p class="diag-row">Update Terakhir: <span id="last-seen-a">-</span> (Seq #<span id="seq-a">0</span>)</p>
-            </div>
+                <p class="diag-row">Last gesture: <strong id="last-gesture-a">-</strong> (Axis: <code id="axis-a">-</code>)</p>
+                <p class="diag-row">Reason / status: <code id="diag-reason-a">NO_TELEMETRY_YET</code></p>
+                <p class="diag-row">Acceleration (X, Y, Z): <code id="accel-a">0.00, 0.00, 0.00</code> m/s²</p>
+                <p class="diag-row">Gyroscope (X, Y, Z): <code id="gyro-a">0.00, 0.00, 0.00</code> rad/s</p>
+                <p class="diag-row">Features: RMS=<code id="rms-a">0.000</code> m/s² | Rot=<code id="rot-a">0.000</code> rad</p>
+                <p class="diag-row">Last update: <span id="last-seen-a">-</span> (Seq #<span id="seq-a">0</span>)</p>
+            </details>
 
-            <!-- Pairing QR & Fallback Player A -->
-            <details class="pairing-panel" open>
-                <summary>Pairing &amp; QR Code (PLAYER_A)</summary>
+            <!-- Player A QR pairing and fallback -->
+            <details class="pairing-panel">
+                <summary>Player A QR code</summary>
                 <div class="qr-box">
                     <canvas id="qr-canvas-a" width="164" height="164"></canvas>
                 </div>
-                <p class="pair-meta">Scan QR di atas dengan HP A (atau melalui halaman <code>/pair</code>)</p>
-                <p class="pair-meta">Launcher 1-Perintah Termux: <code id="auto-cmd-a">bash scripts/start_edge.sh A</code></p>
-                <p class="pair-meta">Kode Fallback Manual: <code id="pair-code-a">-</code></p>
-                <p class="pair-meta">URI Pairing: <code id="qr-uri-a">-</code></p>
-                <p class="pair-meta">Perintah Langsung: <code id="termux-cmd-a">-</code></p>
-                <!-- Kontrol Simulasi Cepat Tanpa HP Fisik -->
-                <div class="sim-controls">
-                    <small>Simulasi Cepat Edge A:</small><br>
-                    <button type="button" onclick="simulateEdge('PLAYER_A', 'CONNECT')">Connect</button>
-                    <button type="button" onclick="simulateEdge('PLAYER_A', 'DISCONNECT')">Disconnect</button>
-                    <button type="button" onclick="simulateGesture('PLAYER_A', 'WEAK')">Gerak Lemah (Ditolak)</button>
-                    <button type="button" onclick="simulateGesture('PLAYER_A', 'LEFT')">Goyang Kiri (ROCK)</button>
-                    <button type="button" onclick="simulateGesture('PLAYER_A', 'UP')">Goyang Atas (PAPER)</button>
-                    <button type="button" onclick="simulateGesture('PLAYER_A', 'RIGHT')">Goyang Kanan (SCISSORS)</button>
-                </div>
+                <p class="pair-meta">Scan this code with Player A's phone.</p>
+                <p class="pair-meta">Start the sensor: <code id="auto-cmd-a">bash scripts/start_edge.sh A</code></p>
+                <details>
+                    <summary>Advanced options</summary>
+                    <p class="pair-meta">Code: <code id="pair-code-a">-</code></p>
+                    <p class="pair-meta">QR link: <code id="qr-uri-a">-</code></p>
+                    <p class="pair-meta">Manual command: <code id="termux-cmd-a">-</code></p>
+                </details>
+            </details>
+            <details class="sim-controls">
+                <summary>Simulation controls</summary>
+                <button type="button" onclick="simulateEdge('PLAYER_A', 'CONNECT')">Connect</button>
+                <button type="button" onclick="simulateEdge('PLAYER_A', 'DISCONNECT')">Disconnect</button>
+                <button type="button" onclick="simulateGesture('PLAYER_A', 'WEAK')">Weak move (rejected)</button>
+                <button type="button" onclick="simulateGesture('PLAYER_A', 'LEFT')">Shake left (rock)</button>
+                <button type="button" onclick="simulateGesture('PLAYER_A', 'UP')">Shake up (paper)</button>
+                <button type="button" onclick="simulateGesture('PLAYER_A', 'RIGHT')">Shake right (scissors)</button>
+                <p id="sim-feedback-a" class="sim-feedback" role="status" aria-live="polite"></p>
             </details>
         </section>
 
-        <!-- CENTER GAME CONTROL PANEL -->
+        <!-- GAME CONTROL -->
         <section class="center-panel">
-            <h2>Kontrol Permainan</h2>
-            <p>State: <strong id="game-state-display">WAITING_FOR_PLAYERS</strong></p>
-            <p>Ronde: <strong id="round-id-display">0</strong></p>
+            <span class="card-bloom card-bloom-center" aria-hidden="true">❧</span>
+
+            <div class="center-panel-header">
+                <div class="panel-eyebrow">
+                    <span class="eyebrow-flower" aria-hidden="true">❀</span>
+                    <span>Match Arena</span>
+                    <span class="eyebrow-flower" aria-hidden="true">❀</span>
+                </div>
+                <h2 class="panel-title">Let's Play!</h2>
+            </div>
+
+            <div class="game-meta-strip">
+                <div class="meta-chip meta-status">
+                    <span class="meta-dot" aria-hidden="true"></span>
+                    <span class="meta-label">Status</span>
+                    <strong id="game-state-display" class="meta-value">Waiting for players</strong>
+                </div>
+                <div class="meta-chip meta-round">
+                    <span class="meta-label">Round</span>
+                    <strong id="round-id-display" class="meta-value">0</strong>
+                </div>
+            </div>
 
             <div class="countdown-box">
-                <span>Countdown:</span>
+                <div class="countdown-header">
+                    <span class="countdown-icon" aria-hidden="true">⏳</span>
+                    <span class="countdown-label">Starting in</span>
+                </div>
                 <div id="countdown-display" class="countdown-number">-</div>
             </div>
 
             <div class="result-box">
-                <p>Hasil Ronde: <strong id="round-outcome-display">-</strong></p>
-                <p>Pemenang: <strong id="winner-name-display">-</strong></p>
+                <div class="result-card-header">
+                    <span class="result-badge-title">Round Summary</span>
+                </div>
+                <div class="result-details-grid">
+                    <div class="result-cell">
+                        <span class="result-label">Last result</span>
+                        <strong id="round-outcome-display" class="result-value">-</strong>
+                    </div>
+                    <div class="result-separator" aria-hidden="true"></div>
+                    <div class="result-cell">
+                        <span class="result-label">Winner</span>
+                        <strong id="winner-name-display" class="result-value winner-text">-</strong>
+                    </div>
+                </div>
             </div>
 
             <div class="action-buttons">
-                <button type="button" id="btn-start-game" class="primary-btn" disabled>START GAME</button>
-                <button type="button" id="btn-reset-score" class="danger-btn">RESET SCORE</button>
+                <button type="button" id="btn-start-game" class="primary-btn" disabled>Start round</button>
+                <button type="button" id="btn-reset-score" class="danger-btn">Reset scores</button>
             </div>
 
-            <!-- QR Code Sesi Umum (Otomatis pilih slot kosong A / B) -->
+            <!-- General QR code that assigns an available player slot -->
             <div class="session-qr-card">
-                <h3>QR Pairing Sesi (Otomatis Slot A / B)</h3>
+                <span class="qr-bloom" aria-hidden="true">❀</span>
+                <h3>Join the game</h3>
                 <div class="qr-box">
                     <canvas id="qr-canvas-session" width="164" height="164"></canvas>
                 </div>
-                <p class="pair-meta">Pemain A &amp; B dapat memindai QR sesi ini atau QR pada kartu masing-masing.</p>
+                <p class="pair-meta">Scan this code on both phones to join.</p>
             </div>
         </section>
 
-        <!-- PLAYER B CARD -->
+        <!-- PLAYER B -->
         <section class="player-card" id="card-player-b">
-            <div class="player-icon" aria-label="Ikon Pemain B">📱 B</div>
-            <div class="username-row">
-                <input type="text" id="input-username-b" value="Player B" maxlength="32" aria-label="Username Player B">
-                <button type="button" id="btn-save-name-b">Simpan Nama</button>
-            </div>
-            <p>Status Pemain: <span id="conn-status-b" class="badge offline">WAITING</span></p>
-            <p class="score-display">Skor: <strong id="score-b">0</strong></p>
-
-            <!-- 1. PILIHAN PERMAINAN (Ronde Aktif / Hasil Ronde) -->
-            <div class="choice-box">
-                <span>Pilihan Ronde: <strong id="choice-b">-</strong></span>
-                <span class="outcome-tag" id="outcome-b">-</span>
+            <div class="flex width-full" style="display: flex; width: 100%; gap: 12px; align-items: center; margin-bottom: 12px;">
+                <span class="card-bloom card-bloom-b" aria-hidden="true">❀</span>
+                <div class="player-icon" aria-label="Player B">Player B</div>
+                <span id="conn-status-b" class="badge offline">Not joined</span>
             </div>
 
-            <!-- 2. LIVE TELEMETRY & DIAGNOSTIC PANEL (Selalu aktif walau belum START GAME) -->
-            <div class="telemetry-panel">
+            <div class="center-container" style="margin-bottom: 32px;">
+                <div class="username-row">
+                    <input type="text" id="input-username-b" value="Player B" maxlength="32" aria-label="Player B name">
+                    <button type="button" id="btn-save-name-b">Save</button>
+                </div>
+                <span id="save-name-status-b" class="save-name-status" role="status" aria-live="polite"></span>
+                
+                <p class="score-display">Score <strong id="score-b">0</strong></p>
+
+                <span class="outcome-tag" id="outcome-b" aria-live="polite"></span>
+                <span class="move-display" id="choice-b" aria-live="polite"></span>
+            </div>
+
+            <!-- Live sensor data and diagnostics -->
+            <details class="telemetry-panel">
+                <summary>Sensor details</summary>
                 <div class="telemetry-header">
-                    <strong>Live Sensor &amp; Diagnostik (PLAYER_B)</strong>
+                    <strong>Player B sensor</strong>
                     <span id="diag-status-b" class="badge">WAITING</span>
                 </div>
-                <p class="diag-row">Gestur Terakhir: <strong id="last-gesture-b">-</strong> (Sumbu: <code id="axis-b">-</code>)</p>
-                <p class="diag-row">Alasan / Status: <code id="diag-reason-b">NO_TELEMETRY_YET</code></p>
-                <p class="diag-row">Accel (X, Y, Z): <code id="accel-b">0.00, 0.00, 0.00</code> m/s²</p>
-                <p class="diag-row">Gyro (X, Y, Z): <code id="gyro-b">0.00, 0.00, 0.00</code> rad/s</p>
-                <p class="diag-row">Fitur: RMS=<code id="rms-b">0.000</code> m/s² | Rot=<code id="rot-b">0.000</code> rad</p>
-                <p class="diag-row">Update Terakhir: <span id="last-seen-b">-</span> (Seq #<span id="seq-b">0</span>)</p>
-            </div>
+                <p class="diag-row">Last gesture: <strong id="last-gesture-b">-</strong> (Axis: <code id="axis-b">-</code>)</p>
+                    <p class="diag-row">Reason / status: <code id="diag-reason-b">NO_TELEMETRY_YET</code></p>
+                    <p class="diag-row">Acceleration (X, Y, Z): <code id="accel-b">0.00, 0.00, 0.00</code> m/s²</p>
+                    <p class="diag-row">Gyroscope (X, Y, Z): <code id="gyro-b">0.00, 0.00, 0.00</code> rad/s</p>
+                    <p class="diag-row">Features: RMS=<code id="rms-b">0.000</code> m/s² | Rot=<code id="rot-b">0.000</code> rad</p>
+                    <p class="diag-row">Last update: <span id="last-seen-b">-</span> (Seq #<span id="seq-b">0</span>)</p>
+            </details>
 
-            <!-- Pairing QR & Fallback Player B -->
-            <details class="pairing-panel" open>
-                <summary>Pairing &amp; QR Code (PLAYER_B)</summary>
+            <!-- Player B QR pairing and fallback -->
+            <details class="pairing-panel">
+                <summary>Player B QR code</summary>
                 <div class="qr-box">
                     <canvas id="qr-canvas-b" width="164" height="164"></canvas>
                 </div>
-                <p class="pair-meta">Scan QR di atas dengan HP B (atau melalui halaman <code>/pair</code>)</p>
-                <p class="pair-meta">Launcher 1-Perintah Termux: <code id="auto-cmd-b">bash scripts/start_edge.sh B</code></p>
-                <p class="pair-meta">Kode Fallback Manual: <code id="pair-code-b">-</code></p>
-                <p class="pair-meta">URI Pairing: <code id="qr-uri-b">-</code></p>
-                <p class="pair-meta">Perintah Langsung: <code id="termux-cmd-b">-</code></p>
-                <!-- Kontrol Simulasi Cepat Tanpa HP Fisik -->
-                <div class="sim-controls">
-                    <small>Simulasi Cepat Edge B:</small><br>
-                    <button type="button" onclick="simulateEdge('PLAYER_B', 'CONNECT')">Connect</button>
-                    <button type="button" onclick="simulateEdge('PLAYER_B', 'DISCONNECT')">Disconnect</button>
-                    <button type="button" onclick="simulateGesture('PLAYER_B', 'WEAK')">Gerak Lemah (Ditolak)</button>
-                    <button type="button" onclick="simulateGesture('PLAYER_B', 'LEFT')">Goyang Kiri (ROCK)</button>
-                    <button type="button" onclick="simulateGesture('PLAYER_B', 'UP')">Goyang Atas (PAPER)</button>
-                    <button type="button" onclick="simulateGesture('PLAYER_B', 'RIGHT')">Goyang Kanan (SCISSORS)</button>
-                </div>
+                <p class="pair-meta">Scan this code with Player B's phone.</p>
+                <p class="pair-meta">Start the sensor: <code id="auto-cmd-b">bash scripts/start_edge.sh B</code></p>
+                <details>
+                    <summary>Advanced options</summary>
+                    <p class="pair-meta">Code: <code id="pair-code-b">-</code></p>
+                    <p class="pair-meta">QR link: <code id="qr-uri-b">-</code></p>
+                    <p class="pair-meta">Manual command: <code id="termux-cmd-b">-</code></p>
+                </details>
+            </details>
+            <details class="sim-controls">
+                <summary>Simulation controls</summary>
+                <button type="button" onclick="simulateEdge('PLAYER_B', 'CONNECT')">Connect</button>
+                <button type="button" onclick="simulateEdge('PLAYER_B', 'DISCONNECT')">Disconnect</button>
+                <button type="button" onclick="simulateGesture('PLAYER_B', 'WEAK')">Weak move (rejected)</button>
+                <button type="button" onclick="simulateGesture('PLAYER_B', 'LEFT')">Shake left (rock)</button>
+                <button type="button" onclick="simulateGesture('PLAYER_B', 'UP')">Shake up (paper)</button>
+                <button type="button" onclick="simulateGesture('PLAYER_B', 'RIGHT')">Shake right (scissors)</button>
+                <p id="sim-feedback-b" class="sim-feedback" role="status" aria-live="polite"></p>
             </details>
         </section>
     </main>
