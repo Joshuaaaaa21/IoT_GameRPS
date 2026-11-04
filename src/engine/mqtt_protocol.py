@@ -15,7 +15,7 @@ from src.engine.game_engine import VALID_PLAYERS
 TOPIC_PREFIX = "motion-rps"
 DEFAULT_HOST = "broker.hivemq.com"
 DEFAULT_WS_URL = "wss://broker.hivemq.com:8884/mqtt"
-DEFAULT_SESSION_ID = "rps_kelompok_07"
+DEFAULT_SESSION_ID = "rps-kelompok12"
 STALE_WINDOW_MS = 30_000  # Reject messages older/newer than 30 seconds when sent_at_ms is present
 
 # QoS Constants

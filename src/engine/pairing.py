@@ -443,14 +443,14 @@ def save_persistent_session_id(session_id: str, filepath: str = DEFAULT_SESSION_
 
 def resolve_stable_session_id(
     explicit_session_id: Optional[str] = None,
-    default_session_id: str = "rps_kelompok_07",
+    default_session_id: str = "rps-kelompok12",
 ) -> str:
     """
     Resolve a stable, persistent session ID following priority:
     1. Explicitly provided argument (CLI or code)
     2. Environment variable (RPS_ROOM_ID, PROJECT_ID, DEFAULT_SESSION_ID)
     3. Persistent session file (.active_session.json)
-    4. Default stable constant ('rps_kelompok_07')
+    4. Default stable constant ('rps-kelompok12')
     Never generates a random ID on restart unless explicitly requested via new session creation.
     """
     if explicit_session_id and SAFE_SESSION_REGEX.match(explicit_session_id.strip()):
