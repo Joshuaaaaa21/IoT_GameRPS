@@ -1,0 +1,49 @@
+File data:
+  - /kaggle/input/datasets/ruthhhs/rps-gestures/jojoow_HP_B.csv
+  - /kaggle/input/datasets/ruthhhs/rps-gestures/ruths_HP_A.csv
+
+Total trial: 204 | dipakai: 202 | dibuang: {'tanpa_gerakan': 1, 'terlalu_pendek': 1} (tanpa gerakan = tidak ada lonjakan >= 3.0 m/s2)
+
+Jumlah trial per label (dipakai):
+  ROCK     : 66
+  PAPER    : 68
+  SCISSORS : 68
+Jumlah trial per file:
+  jojoow_HP_B.csv: 52
+  ruths_HP_A.csv: 150
+
+=== BASELINE RULE-BASED (GestureClassifier asli) ===
+Akurasi semua trial : 0.745  (n=204)
+Akurasi pada trial yg dipakai ML: 0.752
+Confusion (baris=asli, kolom=prediksi) urutan ['ROCK', 'PAPER', 'SCISSORS', 'NONE']
+[[33  0 33  2]
+ [ 0 68  0  0]
+ [13  1 51  3]
+ [ 0  0  0  0]]
+
+=== EVALUASI ML ===
+LogReg        latih-di-file-lain, uji-di-file-ini : 0.584   <- paling jujur
+    uji di jojoow_HP_B.csv: 0.769 (n=52)
+    uji di ruths_HP_A.csv: 0.520 (n=150)
+LogReg        acak (data dicampur, cenderung lebih optimis): 0.875 +/- 0.041
+RandomForest  latih-di-file-lain, uji-di-file-ini : 0.777   <- paling jujur
+    uji di jojoow_HP_B.csv: 0.731 (n=52)
+    uji di ruths_HP_A.csv: 0.793 (n=150)
+    Confusion (baris=asli, kolom=prediksi) ['ROCK', 'PAPER', 'SCISSORS']
+[[53  3 10]
+ [ 1 67  0]
+ [27  4 37]]
+RandomForest  acak (data dicampur, cenderung lebih optimis): 0.929 +/- 0.040
+
+Model diexport: /kaggle/working/gesture_model.json (106.7 KB)
+Verifikasi Python-murni vs sklearn: selisih proba maks 1.39e-17, prediksi beda 0/202
+
+Fitur paling berpengaruh:
+  dz_abs_sum     0.095
+  first_dx       0.070
+  gx_std         0.063
+  gz_min         0.063
+  dx_argmin      0.061
+  gz_std         0.056
+  gx_abs_sum     0.056
+  gz_max         0.056
