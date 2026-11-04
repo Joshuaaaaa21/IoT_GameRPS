@@ -15,6 +15,7 @@ Semua dalam Python murni (tanpa numpy/sklearn), cocok untuk Termux.
 """
 
 import dataclasses
+import math
 import os
 import time
 from collections import deque
@@ -101,6 +102,9 @@ class MLGestureEngine:
 
     # ---- inti ----
     def feed(self, sample: Sample, now: float) -> MLResult:
+        if not all(math.isfinite(v) for v in sample):
+            return MLResult("REJECTED", "ML_NON_FINITE_SAMPLE")
+
         n_seg = self.model.seg_n
 
         if self._collecting:
@@ -192,6 +196,9 @@ class HybridGestureClassifier(GestureClassifier):
         now = sample.timestamp if sample.timestamp > 0 else time.time()
         res = self.ml.feed((sample.ax, sample.ay, sample.az, sample.gx, sample.gy, sample.gz), now)
         detected = res.status == "DETECTED" and res.label is not None
+        bx, by, bz = self.baseline
+        finite_accel = all(math.isfinite(v) for v in (sample.ax, sample.ay, sample.az))
+        d = delta_norm((sample.ax, sample.ay, sample.az, 0, 0, 0), self.baseline) if finite_accel else 0.0
         self.last_diagnostic = dataclasses.replace(
             self.last_diagnostic,
             status="DETECTED" if detected else ("REJECTED" if res.status == "REJECTED" else "WAITING"),
@@ -201,6 +208,12 @@ class HybridGestureClassifier(GestureClassifier):
             best_direction=res.label,
             best_score=round(res.confidence, 4),
             threshold=self.ml.min_confidence,
+            total_delta=round(d, 4),
+            deltas={
+                "ax": round(sample.ax - bx, 4),
+                "ay": round(sample.ay - by, 4),
+                "az": round(sample.az - bz, 4),
+            } if finite_accel else {"ax": 0.0, "ay": 0.0, "az": 0.0},
         )
         return Choice[res.label] if detected else None
 
@@ -211,21 +224,32 @@ def load_ml_engine(
 ) -> Tuple[Optional[MLGestureEngine], str]:
     """Muat model JSON. Mengembalikan (engine, pesan); engine=None bila gagal (-> fallback rule-based)."""
     here = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(here, "..", ".."))
     candidates = [
         path,
         os.getenv("GESTURE_MODEL_PATH"),
+        os.path.join(project_root, "models", "gesture_model.json"),
+        os.path.join(os.getcwd(), "models", "gesture_model.json"),
         DEFAULT_MODEL_RELPATH,
         os.path.join(here, "..", "..", DEFAULT_MODEL_RELPATH),
+        os.path.expanduser("~/.motion_rps_model.json"),
     ]
+    seen = set()
     for cand in candidates:
-        if cand and os.path.isfile(cand):
+        if not cand:
+            continue
+        norm_cand = os.path.normpath(os.path.abspath(cand))
+        if norm_cand in seen:
+            continue
+        seen.add(norm_cand)
+        if os.path.isfile(norm_cand):
             try:
-                model = PureForest.load(cand)
+                model = PureForest.load(norm_cand)
             except Exception as exc:  # JSON rusak / fitur tidak cocok
-                return None, f"[ML] Gagal memuat model {cand}: {exc}. Pakai rule-based."
+                return None, f"[ML] Gagal memuat model {norm_cand}: {exc}. Pakai rule-based."
             engine = MLGestureEngine(model, min_confidence=min_confidence)
             return engine, (
-                f"[ML] Model dimuat: {cand} ({len(model.trees)} pohon, kelas={model.classes}, "
+                f"[ML] Model dimuat: {norm_cand} ({len(model.trees)} pohon, kelas={model.classes}, "
                 f"min_conf={min_confidence})"
             )
     return None, f"[ML] File model tidak ditemukan ({DEFAULT_MODEL_RELPATH}). Pakai rule-based."

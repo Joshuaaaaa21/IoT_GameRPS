@@ -15,10 +15,11 @@ import time
 from typing import Any, Dict, Optional
 from urllib.parse import parse_qs, urlparse
 
+from src.edge.ml_gesture import HybridGestureClassifier, load_ml_engine
 from src.edge.sensor_gesture import GestureClassifier, SensorSample, TermuxSensorReader
 from src.engine.game_engine import GameEngine, PLAYER_A, PLAYER_B, VALID_PLAYERS
 from src.engine.mqtt_bridge import EngineMQTTBridge
-from src.engine.mqtt_protocol import DEFAULT_HOST, DEFAULT_WS_URL, MQTTConfig, TopicBuilder
+from src.engine.mqtt_protocol import DEFAULT_HOST, DEFAULT_SESSION_ID, DEFAULT_WS_URL, MQTTConfig, TopicBuilder
 from src.engine.pairing import (
     PairingToken,
     SessionPairingManager,
@@ -29,6 +30,8 @@ from src.engine.pairing import (
     encode_qr_matrix,
     generate_session_id,
     parse_pairing_input,
+    resolve_stable_session_id,
+    save_persistent_session_id,
 )
 
 DASHBOARD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "dashboard")
@@ -56,9 +59,10 @@ def public_browser_config(session_id: Optional[str] = None) -> Dict[str, Any]:
     cfg = MQTTConfig.from_env()
     project = (
         session_id
+        or os.getenv("RPS_ROOM_ID")
         or os.getenv("PROJECT_ID")
         or os.getenv("DEFAULT_SESSION_ID")
-        or "rps_kelompok_07"
+        or DEFAULT_SESSION_ID
     ).strip()
     ws_url = cfg.websocket_url
     if not ws_url and cfg.host == DEFAULT_HOST:
@@ -83,8 +87,10 @@ class GameRuntimeContext:
         public_base_url: Optional[str] = None,
     ) -> None:
         self.lock = threading.Lock()
-        env_sid = os.getenv("PROJECT_ID") or os.getenv("DEFAULT_SESSION_ID")
-        initial_sid = session_id or env_sid or generate_session_id("rps")
+        initial_sid = resolve_stable_session_id(
+            explicit_session_id=session_id,
+            default_session_id=DEFAULT_SESSION_ID,
+        )
         self.countdown_seconds = countdown_seconds
         self.mqtt_config = MQTTConfig.from_env()
         self.mqtt_connected: bool = False
@@ -113,6 +119,7 @@ class GameRuntimeContext:
             old_sid = self.engine.session_id
             self.simulated_players.clear()
             new_sid = custom_session_id.strip() if custom_session_id else generate_session_id("rps")
+            save_persistent_session_id(new_sid)
             for pid in (PLAYER_A, PLAYER_B):
                 self.bridge.publish_pairing_assignment(
                     action="LEAVE_SESSION",

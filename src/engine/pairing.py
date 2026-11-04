@@ -3,6 +3,7 @@ slot ownership management, and Termux fallback parser for Motion RPS IoT."""
 
 from dataclasses import dataclass, field
 import json
+import os
 import re
 import secrets
 import time
@@ -401,6 +402,81 @@ def parse_pairing_input(raw_input: str, default_player: str = PLAYER_A) -> Pairi
     raise ValueError("Unrecognized pairing input format. Expected QR URI, JSON, or '<session_id>:<player_id>'.")
 
 
+DEFAULT_SESSION_FILE = ".active_session.json"
+
+
+def load_persistent_session_id(filepath: str = DEFAULT_SESSION_FILE) -> Optional[str]:
+    """Load previously persisted active session_id across server restarts."""
+    candidates = [
+        filepath,
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), filepath),
+    ]
+    for path in candidates:
+        if os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                sid = str(data.get("session_id") or "").strip()
+                if sid and SAFE_SESSION_REGEX.match(sid):
+                    return sid
+            except Exception:
+                pass
+    return None
+
+
+def save_persistent_session_id(session_id: str, filepath: str = DEFAULT_SESSION_FILE) -> None:
+    """Save active session_id to disk so server restarts don't change room/MQTT topics."""
+    if not session_id or not SAFE_SESSION_REGEX.match(session_id):
+        return
+    candidates = [
+        filepath,
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), filepath),
+    ]
+    for path in candidates:
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"session_id": session_id, "updated_at": time.time()}, f, indent=2)
+            break
+        except Exception:
+            pass
+
+
+def resolve_stable_session_id(
+    explicit_session_id: Optional[str] = None,
+    default_session_id: str = "rps_kelompok_07",
+) -> str:
+    """
+    Resolve a stable, persistent session ID following priority:
+    1. Explicitly provided argument (CLI or code)
+    2. Environment variable (RPS_ROOM_ID, PROJECT_ID, DEFAULT_SESSION_ID)
+    3. Persistent session file (.active_session.json)
+    4. Default stable constant ('rps_kelompok_07')
+    Never generates a random ID on restart unless explicitly requested via new session creation.
+    """
+    if explicit_session_id and SAFE_SESSION_REGEX.match(explicit_session_id.strip()):
+        sid = explicit_session_id.strip()
+        save_persistent_session_id(sid)
+        return sid
+
+    env_sid = (
+        os.getenv("RPS_ROOM_ID")
+        or os.getenv("PROJECT_ID")
+        or os.getenv("DEFAULT_SESSION_ID")
+    )
+    if env_sid and SAFE_SESSION_REGEX.match(env_sid.strip()):
+        sid = env_sid.strip()
+        save_persistent_session_id(sid)
+        return sid
+
+    persisted = load_persistent_session_id()
+    if persisted:
+        return persisted
+
+    sid = default_session_id.strip()
+    save_persistent_session_id(sid)
+    return sid
+
+
 def _normalize_player_slot(raw: str) -> str:
     cleaned = raw.strip().upper()
     if cleaned in ("A", "1", "PLAYER_A", "PLAYERA"):
@@ -411,7 +487,8 @@ def _normalize_player_slot(raw: str) -> str:
 
 
 __all__ = [
-    " DEFAULT_TOKEN_TTL_SEC",
+    "DEFAULT_TOKEN_TTL_SEC",
+    "DEFAULT_SESSION_FILE",
     "PAIRING_SCHEME",
     "PAIRING_VERSION",
     "PairingToken",
@@ -423,5 +500,8 @@ __all__ = [
     "build_web_pair_url",
     "encode_qr_matrix",
     "generate_session_id",
+    "load_persistent_session_id",
     "parse_pairing_input",
+    "resolve_stable_session_id",
+    "save_persistent_session_id",
 ]
