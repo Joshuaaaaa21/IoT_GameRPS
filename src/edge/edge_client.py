@@ -406,7 +406,7 @@ def poll_http_assignment_once(
     server_url: str,
     player_id: str,
     device_id: str,
-    timeout_sec: float = 2.0,
+    timeout_sec: float = 1.0,
 ) -> Optional[Dict[str, Any]]:
     """Query the dashboard server `/api/pair/assignment` for dynamic session assignment."""
     clean_url = server_url.rstrip("/")
@@ -584,20 +584,25 @@ def main() -> int:
     stop_event = threading.Event()
 
     def background_maintenance_loop() -> None:
+        consecutive_http_fails = 0
         while not stop_event.is_set():
-            if server_url:
-                info = poll_http_assignment_once(server_url, client.player_id, client.device_id)
+            if server_url and consecutive_http_fails < 3:
+                info = poll_http_assignment_once(server_url, client.player_id, client.device_id, timeout_sec=1.0)
                 if info and info.get("ok"):
+                    consecutive_http_fails = 0
                     sid = info.get("session_id")
                     pid = info.get("player_id") or client.player_id
                     if sid and (info.get("assigned") or not args.auto_pair):
                         client.reconfigure_session(sid, pid)
                 elif info and not info.get("session_active", True) and not client.standby_waiting_pair:
+                    consecutive_http_fails = 0
                     client.handle_pairing_assignment_message(json.dumps({
                         "action": "LEAVE_SESSION",
                         "session_id": client.session_id,
                         "player_id": client.player_id,
                     }))
+                else:
+                    consecutive_http_fails += 1
             client.send_heartbeat_if_due()
             stop_event.wait(1.5)
 
