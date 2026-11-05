@@ -198,6 +198,7 @@
             <p>Status: <strong id="game-state-display">Waiting for players</strong></p>
             <p>Round: <strong id="round-id-display">0</strong></p>
 
+<<<<<<< HEAD
             <div class="countdown-box">
                 <span>Starting in</span>
                 <div id="countdown-display" class="countdown-number">-</div>
@@ -206,6 +207,23 @@
             <div class="result-box">
                 <p>Last result <strong id="round-outcome-display">-</strong></p>
                 <p>Winner <strong id="winner-name-display">-</strong></p>
+=======
+            <div class="result-box">
+                <div class="result-card-header">
+                    <span class="result-badge-title">Round Summary</span>
+                </div>
+                <div id="result-details-grid" class="result-details-grid">
+                    <div class="result-cell">
+                        <span class="result-label">Last result</span>
+                        <strong id="round-outcome-display" class="result-value">-</strong>
+                    </div>
+                    <div id="winner-result-separator" class="result-separator" aria-hidden="true"></div>
+                    <div id="winner-result-cell" class="result-cell">
+                        <span class="result-label">Winner</span>
+                        <strong id="winner-name-display" class="result-value winner-text">-</strong>
+                    </div>
+                </div>
+>>>>>>> 9403f13 (Update countdown and game result UI)
             </div>
 
             <div class="action-buttons">
@@ -285,6 +303,13 @@
             </details>
         </section>
     </main>
+
+    <div id="countdown-overlay" class="countdown-overlay" hidden>
+        <div class="countdown-card" role="status" aria-labelledby="countdown-title">
+            <p id="countdown-title" class="countdown-title">Don't move your phone</p>
+            <div id="countdown-display" class="countdown-number">5</div>
+        </div>
+    </div>
 
     <script src="/app.js"></script>
 </body>

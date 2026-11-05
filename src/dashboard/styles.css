@@ -2887,3 +2887,276 @@ body.mobile-pair-body {
 .mobile-pair-body .pair-session-qr-card h3 {
     color: #5d486e;
 }
+<<<<<<< HEAD
+=======
+
+/* ========================================================
+   Enhanced Center Panel UI (Arena Control, Countdown, Result)
+   ======================================================== */
+.center-panel-header {
+    margin: 4px 0 14px;
+}
+
+.panel-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #8b7494;
+}
+
+.eyebrow-flower {
+    font-size: 0.65rem;
+    color: #b18cb5;
+}
+
+.center-panel .panel-title,
+.center-panel h2 {
+    margin: 0;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    color: #594462;
+    text-shadow: 0 1px 3px rgba(255, 255, 255, 0.85);
+}
+
+/* Meta Chips (Status & Round) */
+.game-meta-strip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 10px 0 16px;
+}
+
+.meta-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(137, 98, 127, 0.18);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.85), rgba(246, 240, 248, 0.65));
+    box-shadow: 0 2px 6px rgba(84, 62, 79, 0.05);
+    font-size: 0.8rem;
+    line-height: 1.3;
+}
+
+.meta-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #71845f;
+    box-shadow: 0 0 0 2px rgba(113, 132, 95, 0.25);
+    animation: meta-dot-pulse 2s infinite ease-in-out;
+}
+
+@keyframes meta-dot-pulse {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 0.85;
+    }
+    50% {
+        transform: scale(1.25);
+        opacity: 1;
+    }
+}
+
+.meta-label {
+    color: var(--muted);
+    font-size: 0.74rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.meta-value {
+    color: var(--ink);
+    font-weight: 700;
+}
+
+/* Enhanced Countdown Box */
+.center-panel .countdown-box {
+    margin: 10px 0 16px;
+    border: 1px solid rgba(255, 255, 255, 0.78);
+    border-radius: 22px;
+    padding: 14px 18px;
+    background:
+        radial-gradient(circle at 50% 15%, rgba(255, 255, 255, 0.85), transparent 55%),
+        linear-gradient(145deg, #f7f1f9 0%, #fffbf2 50%, #f0f4ec 100%);
+    box-shadow:
+        0 10px 24px rgba(89, 69, 91, 0.07),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.countdown-header {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #88748d;
+}
+
+.countdown-icon {
+    font-size: 0.85rem;
+}
+
+.center-panel .countdown-number {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 3.2rem;
+    font-weight: 700;
+    color: #5d4563;
+    line-height: 1.1;
+    margin-top: 4px;
+    letter-spacing: -0.04em;
+    text-shadow: 0 2px 10px rgba(93, 69, 99, 0.12);
+}
+
+/* Enhanced Result Box */
+.center-panel .result-box {
+    margin: 12px 0 16px;
+    border: 1px solid rgba(255, 255, 255, 0.82);
+    border-radius: 20px;
+    padding: 13px 16px;
+    background:
+        radial-gradient(circle at 100% 0%, rgba(229, 191, 118, 0.12), transparent 45%),
+        linear-gradient(145deg, rgba(255, 254, 250, 0.95), rgba(244, 239, 246, 0.88));
+    box-shadow:
+        0 8px 20px rgba(90, 71, 95, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    text-align: center;
+}
+
+.countdown-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(68, 57, 71, .18);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+}
+
+.countdown-overlay[hidden] {
+    display: none;
+}
+
+.countdown-card {
+    width: min(280px, 100%);
+    padding: 24px;
+    border: 1px solid rgba(255, 255, 255, .7);
+    border-radius: 22px;
+    background: rgba(255, 255, 255, .3);
+    box-shadow: 0 16px 40px rgba(48, 39, 51, .16);
+    text-align: center;
+}
+
+.countdown-title {
+    margin: 0;
+    color: var(--ink);
+    font-size: .9rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.countdown-title.is-go {
+    font-size: clamp(2.5rem, 12vw, 4rem);
+    letter-spacing: .02em;
+}
+
+.countdown-card .countdown-number {
+    margin-top: 6px;
+    color: #443947;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: clamp(4rem, 16vw, 5.5rem);
+    font-weight: 700;
+    line-height: 1;
+    text-shadow: 0 2px 10px rgba(255, 255, 255, .4);
+}
+
+.result-card-header {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 9px;
+}
+
+.result-badge-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #7b6284;
+    background: rgba(235, 225, 242, 0.75);
+    border: 1px solid rgba(137, 98, 127, 0.16);
+    border-radius: 999px;
+    padding: 3px 12px;
+}
+
+.result-details-grid {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    gap: 8px;
+}
+
+.result-details-grid.is-canceled {
+    justify-content: center;
+}
+
+.result-details-grid.is-canceled > .result-cell:first-child {
+    flex: 0 1 auto;
+}
+
+.result-cell {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    text-align: center;
+}
+
+.result-separator {
+    width: 1px;
+    height: 30px;
+    background: rgba(137, 98, 127, 0.16);
+}
+
+.result-details-grid .is-hidden {
+    display: none;
+}
+
+.result-cell .result-label {
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.result-cell .result-value {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--ink);
+}
+
+.result-cell .winner-text {
+    color: #63436f;
+    font-weight: 700;
+}
+>>>>>>> 9403f13 (Update countdown and game result UI)
