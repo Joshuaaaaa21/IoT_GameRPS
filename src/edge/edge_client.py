@@ -153,6 +153,7 @@ class EdgeDeviceClient:
             player_id=self.player_id,
             publish_fn=publish_fn,
         )
+        self.started_at: float = time.time()
         self.active_round_id: Optional[int] = None
         self.round_active: bool = False
         self.choice_locked_for_round: Optional[int] = None
@@ -243,6 +244,19 @@ class EdgeDeviceClient:
         data, err = parse_json_payload(raw_payload)
         if err or data is None:
             return False
+
+        # Drop stale messages from broker retain buffer or past sessions (> 15 seconds old or before client start)
+        msg_ts = data.get("timestamp")
+        now = time.time()
+        if isinstance(msg_ts, (int, float)) and msg_ts > 0:
+            if (now - float(msg_ts)) > 15.0 or float(msg_ts) < (self.started_at - 5.0):
+                if self.debug_sensors:
+                    print(
+                        f"[STALE_PAIRING_IGNORED] Pesan pairing lama diabaikan (age={now - float(msg_ts):.1f}s)",
+                        flush=True,
+                    )
+                return False
+
         action = str(data.get("action") or "").upper()
         sid = str(data.get("session_id") or "").strip()
         pid = str(data.get("player_id") or self.player_id).strip()
@@ -600,6 +614,7 @@ def main() -> int:
                         "action": "LEAVE_SESSION",
                         "session_id": client.session_id,
                         "player_id": client.player_id,
+                        "timestamp": time.time(),
                     }))
                 else:
                     consecutive_http_fails += 1
@@ -627,10 +642,20 @@ def main() -> int:
             cal_samples = list(TermuxSensorReader.stream_termux_sensors(limit=6))
             client.classifier.calibrate(cal_samples)
             print(f"Kalibrasi selesai (baseline={tuple(round(v, 2) for v in client.classifier.baseline)}). Siap mendeteksi gerakan!")
-            for sample in TermuxSensorReader.stream_termux_sensors():
-                choice = client.feed_sensor_sample(sample)
-                if choice:
-                    print(f"-> Gerakan terdeteksi & terkirim: {choice.value} (Ronde Aktif={client.round_active})")
+            while not stop_event.is_set():
+                try:
+                    for sample in TermuxSensorReader.stream_termux_sensors():
+                        if stop_event.is_set():
+                            break
+                        choice = client.feed_sensor_sample(sample)
+                        if choice:
+                            print(f"-> Gerakan terdeteksi & terkirim: {choice.value} (Ronde Aktif={client.round_active})")
+                except Exception as exc:
+                    if client.debug_sensors:
+                        print(f"[SENSOR_WARN] Stream sensor terputus: {exc}. Menghubungkan ulang...", flush=True)
+                if stop_event.is_set():
+                    break
+                time.sleep(0.5)
     except KeyboardInterrupt:
         pass
     finally:

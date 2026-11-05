@@ -68,9 +68,14 @@ class EngineMQTTBridge:
             "timestamp": time.time(),
         }
         raw = json.dumps(payload)
-        self._publish_fn(TopicBuilder.pairing_slot(player_id), raw, QOS_CRITICAL, True)
+        # Clear any old retained message on HiveMQ so it does not trap newly connected devices
+        self._publish_fn(TopicBuilder.pairing_slot(player_id), "", QOS_CRITICAL, True)
         if device_id:
-            self._publish_fn(TopicBuilder.pairing_device(device_id), raw, QOS_CRITICAL, True)
+            self._publish_fn(TopicBuilder.pairing_device(device_id), "", QOS_CRITICAL, True)
+        # Pairing actions must be published without retain (retain=False) to avoid sticky stale actions
+        self._publish_fn(TopicBuilder.pairing_slot(player_id), raw, QOS_CRITICAL, False)
+        if device_id:
+            self._publish_fn(TopicBuilder.pairing_device(device_id), raw, QOS_CRITICAL, False)
         return payload
 
     def _default_publish(self, topic: str, payload: str, qos: int, retain: bool) -> None:

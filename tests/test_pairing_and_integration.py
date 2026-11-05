@@ -31,7 +31,9 @@ from src.engine.server import GameRuntimeContext, create_http_handler, public_br
 
 class TestPairingAndIntegration(unittest.TestCase):
     def test_new_session_keeps_current_session_id_by_default(self) -> None:
+        published_actions = []
         ctx = GameRuntimeContext(session_id="rps-kelompok12")
+        ctx.bridge._publish_fn = lambda t, p, q, r: published_actions.append((t, p))
         previous_engine = ctx.engine
         previous_pairing_token = ctx.pairing_manager.pairing_token
         ctx.engine.set_player_connection(PLAYER_A, True)
@@ -44,6 +46,36 @@ class TestPairingAndIntegration(unittest.TestCase):
         self.assertIsNot(ctx.engine, previous_engine)
         self.assertEqual(ctx.engine.state, GameState.WAITING_FOR_PLAYERS)
         self.assertNotEqual(ctx.pairing_manager.pairing_token, previous_pairing_token)
+        # Should not publish LEAVE_SESSION when remaining on the same session ID
+        leave_actions = [p for t, p in published_actions if "LEAVE_SESSION" in p]
+        self.assertEqual(len(leave_actions), 0)
+
+    def test_stale_retained_pairing_message_ignored_by_edge_client(self) -> None:
+        token = PairingToken(session_id="rps-kelompok12", player_id=PLAYER_A)
+        client = EdgeDeviceClient(token=token, simulate=True)
+        self.assertFalse(client.standby_waiting_pair)
+
+        # Message from 60 seconds ago (e.g. stale broker retained message)
+        stale_payload = json.dumps({
+            "action": "LEAVE_SESSION",
+            "session_id": "rps-kelompok12",
+            "player_id": PLAYER_A,
+            "timestamp": time.time() - 60.0,
+        })
+        handled = client.handle_pairing_assignment_message(stale_payload)
+        self.assertFalse(handled)
+        self.assertFalse(client.standby_waiting_pair)  # Must NOT kick the client!
+
+        # Fresh message (sent just now)
+        fresh_payload = json.dumps({
+            "action": "LEAVE_SESSION",
+            "session_id": "rps-kelompok12",
+            "player_id": PLAYER_A,
+            "timestamp": time.time(),
+        })
+        handled_fresh = client.handle_pairing_assignment_message(fresh_payload)
+        self.assertTrue(handled_fresh)
+        self.assertTrue(client.standby_waiting_pair)  # Successfully processed
 
     def test_pairing_qr_and_fallback_formats(self) -> None:
         sid = generate_session_id("rps")

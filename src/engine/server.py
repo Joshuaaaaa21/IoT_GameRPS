@@ -124,12 +124,15 @@ class GameRuntimeContext:
             self.simulated_players.clear()
             new_sid = custom_session_id.strip() if custom_session_id else old_sid
             save_persistent_session_id(new_sid)
-            for pid in (PLAYER_A, PLAYER_B):
-                self.bridge.publish_pairing_assignment(
-                    action="LEAVE_SESSION",
-                    session_id=old_sid,
-                    player_id=pid,
-                )
+            # Only send LEAVE_SESSION if the session ID is actually changing to a different room.
+            # If the session ID remains the same, do NOT kick active players out of the same topic.
+            if new_sid != old_sid:
+                for pid in (PLAYER_A, PLAYER_B):
+                    self.bridge.publish_pairing_assignment(
+                        action="LEAVE_SESSION",
+                        session_id=old_sid,
+                        player_id=pid,
+                    )
             new_engine = GameEngine(session_id=new_sid, countdown_seconds=self.countdown_seconds)
             self.engine = new_engine
             self.bridge.switch_session(new_engine)
