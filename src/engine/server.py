@@ -15,10 +15,11 @@ import time
 from typing import Any, Dict, Optional
 from urllib.parse import parse_qs, urlparse
 
+from src.edge.ml_gesture import HybridGestureClassifier, load_ml_engine
 from src.edge.sensor_gesture import GestureClassifier, SensorSample, TermuxSensorReader
 from src.engine.game_engine import GameEngine, PLAYER_A, PLAYER_B, VALID_PLAYERS
 from src.engine.mqtt_bridge import EngineMQTTBridge
-from src.engine.mqtt_protocol import DEFAULT_HOST, DEFAULT_WS_URL, MQTTConfig, TopicBuilder
+from src.engine.mqtt_protocol import DEFAULT_HOST, DEFAULT_SESSION_ID, DEFAULT_WS_URL, MQTTConfig, TopicBuilder
 from src.engine.pairing import (
     PairingToken,
     SessionPairingManager,
@@ -27,8 +28,9 @@ from src.engine.pairing import (
     build_termux_cli_command,
     build_web_pair_url,
     encode_qr_matrix,
-    generate_session_id,
     parse_pairing_input,
+    resolve_stable_session_id,
+    save_persistent_session_id,
 )
 
 DASHBOARD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "dashboard")
@@ -56,9 +58,10 @@ def public_browser_config(session_id: Optional[str] = None) -> Dict[str, Any]:
     cfg = MQTTConfig.from_env()
     project = (
         session_id
+        or os.getenv("RPS_ROOM_ID")
         or os.getenv("PROJECT_ID")
         or os.getenv("DEFAULT_SESSION_ID")
-        or "rps_kelompok_07"
+        or DEFAULT_SESSION_ID
     ).strip()
     ws_url = cfg.websocket_url
     if not ws_url and cfg.host == DEFAULT_HOST:
@@ -83,15 +86,22 @@ class GameRuntimeContext:
         public_base_url: Optional[str] = None,
     ) -> None:
         self.lock = threading.Lock()
-        env_sid = os.getenv("PROJECT_ID") or os.getenv("DEFAULT_SESSION_ID")
-        initial_sid = session_id or env_sid or generate_session_id("rps")
+        initial_sid = resolve_stable_session_id(
+            explicit_session_id=session_id,
+            default_session_id=DEFAULT_SESSION_ID,
+        )
         self.countdown_seconds = countdown_seconds
         self.mqtt_config = MQTTConfig.from_env()
         self.mqtt_connected: bool = False
         self.mqtt_status_text: str = "LOCAL_READY (MQTT broker optional/configurable in .env)"
         self.lan_ip: str = detect_lan_ip()
         self.port: int = int(os.getenv("DASHBOARD_PORT", "8080"))
-        self.public_base_url: Optional[str] = public_base_url or os.getenv("PUBLIC_BASE_URL")
+        self.public_base_url: Optional[str] = (
+            public_base_url
+            or os.getenv("PUBLIC_BASE_URL")
+            or os.getenv("PUBLIC_URL")
+            or os.getenv("TUNNEL_URL")
+        )
         self.engine = GameEngine(session_id=initial_sid, countdown_seconds=countdown_seconds)
         self.bridge = EngineMQTTBridge(engine=self.engine)
         self.pairing_manager = SessionPairingManager(session_id=initial_sid, ttl_seconds=token_ttl_seconds)
@@ -112,7 +122,8 @@ class GameRuntimeContext:
         with self.lock:
             old_sid = self.engine.session_id
             self.simulated_players.clear()
-            new_sid = custom_session_id.strip() if custom_session_id else generate_session_id("rps")
+            new_sid = custom_session_id.strip() if custom_session_id else old_sid
+            save_persistent_session_id(new_sid)
             for pid in (PLAYER_A, PLAYER_B):
                 self.bridge.publish_pairing_assignment(
                     action="LEAVE_SESSION",
@@ -623,25 +634,56 @@ def main() -> None:
         help="HTTP port (default from DASHBOARD_PORT or 8080)",
     )
     parser.add_argument("--session", default=None, help="Initial session ID")
-    parser.add_argument("--connect-mqtt", action="store_true", help="Connect to live MQTT broker from .env")
+    parser.add_argument(
+        "--public-url",
+        default=None,
+        help="Public web URL (e.g. https://abc.ngrok-free.app or Cloudflare Tunnel) for cross-network mobile access",
+    )
+    parser.add_argument(
+        "--no-mqtt",
+        action="store_true",
+        help="Disable live MQTT broker connection (run in offline local mode)",
+    )
+    parser.add_argument(
+        "--connect-mqtt",
+        action="store_true",
+        default=True,
+        help="Connect to live MQTT broker from .env or default cloud broker (default: enabled)",
+    )
     args = parser.parse_args()
 
-    ctx = GameRuntimeContext(session_id=args.session)
+    ctx = GameRuntimeContext(
+        session_id=args.session,
+        public_base_url=args.public_url,
+    )
     ctx.port = args.port
 
-    if args.connect_mqtt:
+    if not args.no_mqtt:
         try:
             client = ctx.bridge.bind_mqtt_client(ctx.mqtt_config)
             client.connect_async(ctx.mqtt_config.host, ctx.mqtt_config.port, keepalive=30)
             client.loop_start()
             ctx.mqtt_connected = True
-            ctx.mqtt_status_text = f"CONNECTING/ACTIVE ({ctx.mqtt_config.host}:{ctx.mqtt_config.port})"
+            ctx.mqtt_status_text = f"ACTIVE ({ctx.mqtt_config.host}:{ctx.mqtt_config.port})"
+            print(f"[SERVER] [MQTT] Terhubung ke Cloud Broker: {ctx.mqtt_config.host}:{ctx.mqtt_config.port} (Room: {ctx.engine.session_id})", flush=True)
         except Exception as exc:
             ctx.mqtt_connected = False
             ctx.mqtt_status_text = f"MQTT_ERROR: {exc}"
+            print(f"[SERVER] [MQTT_WARN] Gagal koneksi MQTT: {exc}", flush=True)
 
     server = ThreadingHTTPServer((args.host, args.port), create_http_handler(ctx))
-    print(f"Motion RPS Server berjalan di http://127.0.0.1:{args.port} | LAN HP: http://{ctx.lan_ip}:{args.port}/pair (Session: {ctx.engine.session_id})")
+    print("=" * 66)
+    print(f"Motion RPS Server aktif di Room: {ctx.engine.session_id}")
+    print(f"Dashboard Web (Laptop): http://127.0.0.1:{args.port}")
+    if ctx.public_base_url:
+        print(f"Akses Mobile Web (Beda Internet/Tunnel): {ctx.public_base_url}/pair")
+    else:
+        print(f"Akses Mobile Web (Satu Wi-Fi): http://{ctx.lan_ip}:{args.port}/pair")
+    print("Akses Termux HP (Bisa Beda Wi-Fi / Paket Data Seluler):")
+    print(f"  - HP 1 (Player A): bash scripts/start_edge.sh A")
+    print(f"  - HP 2 (Player B): bash scripts/start_edge.sh B")
+    print("  (Sinyal telemetri & gesture otomatis terhubung via HiveMQ Cloud)")
+    print("=" * 66)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

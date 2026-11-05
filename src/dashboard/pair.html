@@ -27,10 +27,11 @@
             <path d="m34 29 1 11m7-12-2 10" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2.5"/>
         </symbol>
     </svg>
+
     <header class="top-bar">
         <div>
-            <h1>Join the game</h1>
-            <p class="subtitle">Scan the QR code on your laptop to join.</p>
+            <h1 style="margin: 0%;">Join the game</h1>
+            <p class="subtitle" style="margin-top: 0px;">Scan the QR code on your laptop to join.</p>
         </div>
         <div>
             <a href="/" class="pair-link-btn">Back to game</a>
@@ -40,17 +41,17 @@
     <main class="pair-container">
         <section class="player-card">
             <span class="card-bloom pair-bloom pair-bloom-scan" aria-hidden="true">❀</span>
-            <h2>Scan the QR code</h2>
-            <p class="subtitle">Use your phone camera or choose a saved QR image.</p>
+            <h2 style="margin-bottom: 0px;">Scan the QR code</h2>
+            <p class="subtitle" style="margin-top: 0px;">Use your phone camera or choose a saved QR image.</p>
 
             <div class="action-buttons wrap-btns">
                 <button type="button" id="btn-scan-qr" class="primary-btn">Open camera</button>
-                <button type="button" id="btn-stop-camera" hidden>Close camera</button>
+                <button type="button" class="file-btn" id="btn-stop-camera" hidden>Close camera</button>
                 <label class="file-btn">
                     Choose QR photo
                     <input type="file" id="input-qr-photo" accept="image/*" capture="environment" hidden>
                 </label>
-                <button type="button" id="btn-fetch-active-session">Use active session</button>
+                <button type="button" class="file-btn" id="btn-fetch-active-session">Use active session</button>
             </div>
 
             <!-- Live camera viewfinder -->

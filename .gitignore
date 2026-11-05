@@ -10,6 +10,8 @@ env/
 
 # Environment variables & secrets
 .env
+.active_session.json
+*.active_session.json
 
 # IDE & OS files
 .vscode/

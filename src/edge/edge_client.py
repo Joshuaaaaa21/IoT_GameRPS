@@ -24,6 +24,7 @@ import time
 from typing import Any, Callable, Dict, Optional
 from urllib.request import urlopen
 
+from src.edge.ml_gesture import HybridGestureClassifier, load_ml_engine
 from src.edge.sensor_gesture import (
     GestureClassifier,
     GestureConfig,
@@ -33,7 +34,13 @@ from src.edge.sensor_gesture import (
 )
 from src.edge.simulator import VirtualPlayer
 from src.engine.game_engine import Choice, PLAYER_A, PLAYER_B
-from src.engine.mqtt_protocol import MQTTConfig, QOS_CRITICAL, TopicBuilder, parse_json_payload
+from src.engine.mqtt_protocol import (
+    DEFAULT_SESSION_ID,
+    MQTTConfig,
+    QOS_CRITICAL,
+    TopicBuilder,
+    parse_json_payload,
+)
 from src.engine.pairing import PairingToken, parse_pairing_input
 
 DEFAULT_EDGE_CONFIG_PATH = os.path.expanduser("~/.motion_rps_edge.json")
@@ -55,7 +62,16 @@ def load_saved_edge_config(path: str = DEFAULT_EDGE_CONFIG_PATH) -> Dict[str, An
 
 def save_edge_config(config_data: Dict[str, Any], path: str = DEFAULT_EDGE_CONFIG_PATH) -> str:
     """Save non-secret device preferences for one-command launch on subsequent runs."""
-    safe_keys = {"player_id", "device_id", "server_url", "threshold", "invert_x"}
+    safe_keys = {
+        "player_id",
+        "device_id",
+        "server_url",
+        "threshold",
+        "invert_x",
+        "session_id",
+        "model_path",
+        "min_confidence",
+    }
     filtered = {k: v for k, v in config_data.items() if k in safe_keys and v is not None}
     target = path
     try:
@@ -99,6 +115,11 @@ class EdgeDeviceClient:
         device_id: Optional[str] = None,
         standby_waiting_pair: bool = False,
         publish_fn: Optional[Callable[[str, str, int, bool], None]] = None,
+        model_path: Optional[str] = None,
+        min_confidence: float = 0.50,
+        force_rule_based: bool = False,
+        classifier: Optional[GestureClassifier] = None,
+        use_ml: Optional[bool] = None,
     ) -> None:
         token.validate()
         self.lock = threading.Lock()
@@ -112,7 +133,21 @@ class EdgeDeviceClient:
         self.heartbeat_interval_sec = float(heartbeat_interval_sec)
         self.standby_waiting_pair = bool(standby_waiting_pair)
         self.topics = TopicBuilder(self.session_id)
-        self.classifier = GestureClassifier(config=gesture_config)
+
+        # Primary gesture classifier: Machine Learning (HybridGestureClassifier)
+        should_use_ml = use_ml if use_ml is not None else (not simulate or model_path is not None)
+        if classifier is not None:
+            self.classifier = classifier
+        elif force_rule_based or not should_use_ml:
+            self.classifier = GestureClassifier(config=gesture_config)
+            if self.debug_sensors or force_rule_based:
+                print("[EDGE] Menggunakan rule-based classifier.", flush=True)
+        else:
+            ml_engine, msg = load_ml_engine(model_path, min_confidence=min_confidence)
+            self.classifier = HybridGestureClassifier(config=gesture_config, ml_engine=ml_engine)
+            if self.debug_sensors or ml_engine is not None:
+                print(f"[EDGE] {msg} (mode={self.classifier.mode})", flush=True)
+
         self.virtual_player = VirtualPlayer(
             session_id=self.session_id,
             player_id=self.player_id,
@@ -371,7 +406,7 @@ def poll_http_assignment_once(
     server_url: str,
     player_id: str,
     device_id: str,
-    timeout_sec: float = 2.0,
+    timeout_sec: float = 1.0,
 ) -> Optional[Dict[str, Any]]:
     """Query the dashboard server `/api/pair/assignment` for dynamic session assignment."""
     clean_url = server_url.rstrip("/")
@@ -420,12 +455,17 @@ def main() -> int:
         action="store_true",
         help="Print stage-by-stage raw sensor & diagnostic logs.",
     )
+    parser.add_argument("--model", help="Path to gesture_model.json (default: models/gesture_model.json)")
+    parser.add_argument("--min-conf", type=float, default=0.50, help="Minimum ML confidence threshold (default: 0.50)")
+    parser.add_argument("--force-rule", action="store_true", help="Force legacy rule-based classifier instead of ML")
     args = parser.parse_args()
 
     saved_cfg = load_saved_edge_config()
     device_id = args.device_id or saved_cfg.get("device_id") or f"dev-{secrets.token_hex(4)}"
     server_url = args.server_url or saved_cfg.get("server_url") or os.getenv("DASHBOARD_URL")
     default_slot = args.player or saved_cfg.get("player_id") or "A"
+    model_path = args.model or saved_cfg.get("model_path") or os.getenv("GESTURE_MODEL_PATH")
+    min_conf = args.min_conf if args.min_conf != 0.50 else float(saved_cfg.get("min_confidence", 0.50))
 
     if args.pair_code:
         token = parse_pairing_input(args.pair_code, default_player=default_slot)
@@ -434,7 +474,14 @@ def main() -> int:
         token = parse_pairing_input(f"{args.session}:{args.player or default_slot}")
         standby_mode = False
     elif args.auto_pair:
-        initial_sid = os.getenv("PROJECT_ID") or os.getenv("DEFAULT_SESSION_ID") or "rps_standby"
+        initial_sid = (
+            args.session
+            or os.getenv("RPS_ROOM_ID")
+            or os.getenv("PROJECT_ID")
+            or os.getenv("DEFAULT_SESSION_ID")
+            or saved_cfg.get("session_id")
+            or DEFAULT_SESSION_ID
+        )
         token = parse_pairing_input(f"{initial_sid}:{default_slot}")
         standby_mode = True
     else:
@@ -446,8 +493,11 @@ def main() -> int:
             "player_id": token.player_id,
             "device_id": device_id,
             "server_url": server_url,
+            "session_id": token.session_id,
             "threshold": args.threshold,
             "invert_x": args.invert_x,
+            "model_path": model_path,
+            "min_confidence": min_conf,
         })
 
     cfg = GestureConfig(accel_threshold=args.threshold)
@@ -463,6 +513,10 @@ def main() -> int:
         debug_sensors=args.debug_sensors,
         device_id=device_id,
         standby_waiting_pair=standby_mode,
+        model_path=model_path,
+        min_confidence=min_conf,
+        force_rule_based=args.force_rule,
+        use_ml=not args.force_rule,
     )
 
     if args.sim_gesture:
@@ -530,20 +584,25 @@ def main() -> int:
     stop_event = threading.Event()
 
     def background_maintenance_loop() -> None:
+        consecutive_http_fails = 0
         while not stop_event.is_set():
-            if server_url:
-                info = poll_http_assignment_once(server_url, client.player_id, client.device_id)
+            if server_url and consecutive_http_fails < 3:
+                info = poll_http_assignment_once(server_url, client.player_id, client.device_id, timeout_sec=1.0)
                 if info and info.get("ok"):
+                    consecutive_http_fails = 0
                     sid = info.get("session_id")
                     pid = info.get("player_id") or client.player_id
                     if sid and (info.get("assigned") or not args.auto_pair):
                         client.reconfigure_session(sid, pid)
                 elif info and not info.get("session_active", True) and not client.standby_waiting_pair:
+                    consecutive_http_fails = 0
                     client.handle_pairing_assignment_message(json.dumps({
                         "action": "LEAVE_SESSION",
                         "session_id": client.session_id,
                         "player_id": client.player_id,
                     }))
+                else:
+                    consecutive_http_fails += 1
             client.send_heartbeat_if_due()
             stop_event.wait(1.5)
 
