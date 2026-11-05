@@ -184,23 +184,54 @@ def run_local_simulation_demo(session_id: str = "sim-session-01") -> dict:
     bridge = EngineMQTTBridge(engine=engine, publish_fn=record_publish)
 
     def route_to_bridge(topic: str, payload: str, qos: int, retain: bool) -> None:
-        bridge.handle_raw_message(topic, payload)
+        message = json.loads(payload)
+        bridge.handle_raw_message(
+            topic,
+            payload,
+            now=float(message.get("timestamp", simulation_started_at)),
+        )
 
     player_a = VirtualPlayer(session_id, PLAYER_A, publish_fn=route_to_bridge)
     player_b = VirtualPlayer(session_id, PLAYER_B, publish_fn=route_to_bridge)
 
-    player_a.send_telemetry(connected=True, motion_rms=0.05, rotation_rad=0.01)
-    player_b.send_telemetry(connected=True, motion_rms=0.04, rotation_rad=0.01)
+    simulation_started_at = time.time()
+    player_a.send_telemetry(
+        connected=True,
+        motion_rms=0.05,
+        rotation_rad=0.01,
+        now_ms=int(simulation_started_at * 1000),
+    )
+    player_b.send_telemetry(
+        connected=True,
+        motion_rms=0.04,
+        rotation_rad=0.01,
+        now_ms=int(simulation_started_at * 1000),
+    )
 
     cmd_topic = TopicBuilder(session_id).game_command()
     bridge.handle_raw_message(
         cmd_topic,
         json.dumps({"session_id": session_id, "command": "START_GAME"}),
+        now=simulation_started_at,
     )
 
     current_round = engine.round_id
-    player_a.send_choice("ROCK", round_id=current_round, motion_rms=2.4, rotation_rad=0.8)
-    player_b.send_choice("SCISSORS", round_id=current_round, motion_rms=2.1, rotation_rad=0.7)
+    choice_time = simulation_started_at + engine.countdown_seconds + 0.1
+    player_a.send_choice(
+        "ROCK",
+        round_id=current_round,
+        motion_rms=2.4,
+        rotation_rad=0.8,
+        now_ms=int(choice_time * 1000),
+    )
+    player_b.send_choice(
+        "SCISSORS",
+        round_id=current_round,
+        motion_rms=2.1,
+        rotation_rad=0.7,
+        now_ms=int((choice_time + 0.1) * 1000),
+    )
+    bridge.tick(now=engine.round_deadline)
 
     return engine.get_state_snapshot()
 

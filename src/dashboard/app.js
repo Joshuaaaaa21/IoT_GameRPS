@@ -2,8 +2,6 @@
 
 let lastSessionId = null;
 let sessionActive = true;
-let countdownWasActive = false;
-let countdownGoUntil = 0;
 const dirtyNames = { a: false, b: false };
 const simulatedMoves = { a: null, b: null };
 
@@ -300,32 +298,30 @@ async function refreshState() {
         const cdEl = document.getElementById("countdown-display");
         const countdownOverlay = document.getElementById("countdown-overlay");
         const countdownTitle = document.getElementById("countdown-title");
-        const isCountdown = data.state === "COUNTDOWN" && data.round_deadline != null;
-        const now = Date.now();
+        const isCountdown = data.state === "COUNTDOWN" &&
+            data.countdown_deadline != null &&
+            data.round_deadline != null;
         if (isCountdown) {
-            const rem = Math.max(0, data.round_deadline - data.server_time);
-            if (rem > 0) {
-                cdEl.textContent = Math.ceil(rem) + "s";
+            const countdownRemaining = data.countdown_deadline - data.server_time;
+            const playRemaining = data.round_deadline - data.server_time;
+            if (countdownRemaining > 0) {
+                cdEl.textContent = String(Math.ceil(countdownRemaining));
                 countdownTitle.textContent = "Don't move your phone";
                 countdownTitle.classList.remove("is-go");
-                countdownGoUntil = 0;
-                countdownWasActive = true;
                 countdownOverlay.hidden = false;
-            } else {
-                if (!countdownGoUntil) countdownGoUntil = now + 900;
+            } else if (playRemaining > 0) {
+                const showGo = data.server_time < data.countdown_deadline + 0.9;
+                cdEl.textContent = "";
                 countdownTitle.textContent = "GO!!!";
                 countdownTitle.classList.add("is-go");
-                cdEl.textContent = "";
-                countdownOverlay.hidden = now >= countdownGoUntil;
+                countdownOverlay.hidden = !showGo;
+            } else {
+                countdownOverlay.hidden = true;
             }
         } else {
-            if (countdownWasActive) countdownGoUntil = now + 900;
-            countdownWasActive = false;
-            const showGo = now < countdownGoUntil;
-            countdownOverlay.hidden = !showGo;
-            countdownTitle.textContent = showGo ? "GO!!!" : "Don't move your phone";
-            countdownTitle.classList.toggle("is-go", showGo);
-            if (showGo) cdEl.textContent = "";
+            countdownOverlay.hidden = true;
+            countdownTitle.textContent = "Don't move your phone";
+            countdownTitle.classList.remove("is-go");
         }
 
         const last = data.last_result;

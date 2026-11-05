@@ -81,7 +81,7 @@ class GameRuntimeContext:
     def __init__(
         self,
         session_id: Optional[str] = None,
-        countdown_seconds: float = 5.0,
+        countdown_seconds: float = 3.0,
         token_ttl_seconds: float = 600.0,
         public_base_url: Optional[str] = None,
     ) -> None:

@@ -66,13 +66,20 @@ class RoundResult:
 class GameEngine:
     """Authoritative state machine and rule evaluator for Motion RPS."""
 
-    def __init__(self, session_id: str, countdown_seconds: float = 5.0) -> None:
+    def __init__(
+        self,
+        session_id: str,
+        countdown_seconds: float = 3.0,
+        choice_window_seconds: float = 3.0,
+    ) -> None:
         if not session_id or not session_id.strip():
             raise ValueError("session_id cannot be empty.")
         self.session_id: str = session_id.strip()
         self.countdown_seconds: float = float(countdown_seconds)
+        self.choice_window_seconds: float = float(choice_window_seconds)
         self.state: GameState = GameState.WAITING_FOR_PLAYERS
         self.round_id: int = 0
+        self.countdown_deadline: Optional[float] = None
         self.round_deadline: Optional[float] = None
         self._round_scored: bool = False
         self.last_result: Optional[RoundResult] = None
@@ -119,7 +126,8 @@ class GameEngine:
         current_time = time.time() if now is None else float(now)
         self.round_id += 1
         self.state = GameState.COUNTDOWN
-        self.round_deadline = current_time + self.countdown_seconds
+        self.countdown_deadline = current_time + self.countdown_seconds
+        self.round_deadline = self.countdown_deadline + self.choice_window_seconds
         self._round_scored = False
         self.last_result = None
 
@@ -138,7 +146,7 @@ class GameEngine:
     ) -> Tuple[bool, str]:
         """
         Record and lock a player's choice for the active round.
-        Returns (accepted, reason). Automatically resolves the round if both choices are in.
+        Returns (accepted, reason). The round resolves when the gesture window expires.
         """
         self._validate_player_id(player_id)
 
@@ -149,7 +157,9 @@ class GameEngine:
             return False, "IGNORED_WRONG_ROUND_ID"
 
         current_time = time.time() if now is None else float(now)
-        if self.round_deadline is not None and current_time > self.round_deadline:
+        if self.countdown_deadline is not None and current_time < self.countdown_deadline:
+            return False, "IGNORED_DURING_COUNTDOWN"
+        if self.round_deadline is not None and current_time >= self.round_deadline:
             return False, "IGNORED_LATE_SUBMISSION"
 
         player = self.players[player_id]
@@ -167,14 +177,10 @@ class GameEngine:
         player.current_choice = normalized
         player.choice_timestamp = current_time
 
-        # Auto-evaluate if both players have locked in their choices
-        if all(p.current_choice is not None for p in self.players.values()):
-            self.evaluate_round(force_timeout=False)
-
         return True, "ACCEPTED"
 
     def check_timeout(self, now: Optional[float] = None) -> Optional[RoundResult]:
-        """Check if active countdown has expired and resolve the round if so."""
+        """Resolve the round when the post-countdown gesture window expires."""
         if self.state != GameState.COUNTDOWN or self.round_deadline is None:
             return None
         current_time = time.time() if now is None else float(now)
@@ -182,10 +188,10 @@ class GameEngine:
             return self.evaluate_round(force_timeout=True)
         return None
 
-    def evaluate_round(self, force_timeout: bool = False) -> RoundResult:
+    def evaluate_round(self, force_timeout: bool = False, now: Optional[float] = None) -> RoundResult:
         """
         Evaluate the current round and update scores exactly once.
-        Can be called when both choices are locked or when the countdown expires.
+        Evaluation is deferred until the gesture window expires.
         """
         if self._round_scored and self.last_result is not None:
             return self.last_result
@@ -193,11 +199,15 @@ class GameEngine:
         if self.state != GameState.COUNTDOWN:
             raise RuntimeError("No active round to evaluate.")
 
+        current_time = time.time() if now is None else float(now)
+        if not force_timeout and self.round_deadline is not None and current_time < self.round_deadline:
+            raise RuntimeError("Cannot evaluate before the gesture window closes.")
+
         p_a = self.players[PLAYER_A]
         p_b = self.players[PLAYER_B]
 
         if not force_timeout and (p_a.current_choice is None or p_b.current_choice is None):
-            raise RuntimeError("Cannot evaluate before timeout when choices are incomplete.")
+            raise RuntimeError("Cannot evaluate before the gesture window expires when choices are incomplete.")
 
         choice_a = p_a.current_choice
         choice_b = p_b.current_choice
@@ -269,6 +279,7 @@ class GameEngine:
             player.choice_timestamp = None
 
         self.round_id = 0
+        self.countdown_deadline = None
         self.round_deadline = None
         self._round_scored = False
         self.last_result = None
@@ -282,6 +293,7 @@ class GameEngine:
             "session_id": self.session_id,
             "state": self.state.value,
             "round_id": self.round_id,
+            "countdown_deadline": self.countdown_deadline,
             "round_deadline": self.round_deadline,
             "players": {
                 pid: {

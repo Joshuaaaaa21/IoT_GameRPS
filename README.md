@@ -51,6 +51,7 @@ Permainan IoT interaktif untuk dua pemain menggunakan sensor **Accelerometer** d
 5. **Validasi Status Online & Mulai Permainan**:
    - Dashboard membedakan status `WAITING` (belum join), `PAIRED (Menunggu Sensor Termux)` (baru scan QR di web), dan `READY / CONNECTED (Sensor Online)` (telemetry/heartbeat sensor aktual telah masuk).
    - Tombol **START GAME** otomatis aktif ketika kedua pemain berstatus `READY / CONNECTED`.
+   - Saat ronde dimulai, pemain melihat countdown 3 detik (`3, 2, 1`), lalu mendapat jendela **GO!!!** selama 3 detik untuk menggoyangkan HP. Hasil ronde baru ditentukan setelah jendela gesture berakhir.
 
 ---
 
