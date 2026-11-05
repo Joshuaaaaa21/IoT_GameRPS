@@ -4,9 +4,11 @@ Pohon mini: dx_min <= -3 -> ROCK ; selain itu dx_max > 3 -> SCISSORS ; selain it
 Jalankan: python -m unittest discover -s tests -v
 """
 import json
+import math
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from src.edge.ml_features import FEATURE_NAMES, PureForest
 from src.edge.ml_gesture import HybridGestureClassifier, MLGestureEngine, load_ml_engine
@@ -161,6 +163,164 @@ class LoaderTests(unittest.TestCase):
         eng, msg = load_ml_engine(os.path.join(tempfile.gettempdir(), "tidak_ada_xyz.json"))
         # bila repo tidak punya models/gesture_model.json -> None; bila punya -> engine; keduanya valid
         self.assertTrue(eng is None or isinstance(eng, MLGestureEngine))
+
+
+class MLParityAndCSVReplayTests(unittest.TestCase):
+    """Test feature extraction parity and replay real phone CSV dataset against the exported model."""
+
+    def test_feature_names_parity(self):
+        self.assertEqual(len(FEATURE_NAMES), 44)
+        self.assertIn("dx_abs_sum", FEATURE_NAMES)
+        self.assertIn("first_dx", FEATURE_NAMES)
+        self.assertIn("gz_min", FEATURE_NAMES)
+        self.assertIn("dmag_max", FEATURE_NAMES)
+
+    def test_csv_replay_accuracy_and_all_classes(self):
+        import glob
+        import pandas as pd
+        from src.edge.ml_features import find_onset, segment_from_onset, features_from_segment
+
+        model_path = os.path.join(os.path.dirname(__file__), "..", "models", "gesture_model.json")
+        if not os.path.isfile(model_path):
+            self.skipTest("models/gesture_model.json tidak ditemukan")
+        forest = PureForest.load(model_path)
+
+        csvs = sorted(glob.glob(os.path.join(os.path.dirname(__file__), "..", "data", "*.csv")))
+        self.assertGreaterEqual(len(csvs), 2)
+
+        correct = 0
+        total = 0
+        per_class_counts = {"ROCK": 0, "PAPER": 0, "SCISSORS": 0}
+        per_class_correct = {"ROCK": 0, "PAPER": 0, "SCISSORS": 0}
+
+        for path in csvs:
+            df = pd.read_csv(path)
+            for _, g in df.groupby("trial_id"):
+                g = g.sort_values("t_ms")
+                label = str(g.iloc[0]["label"]).upper()
+                if label not in per_class_counts:
+                    continue
+                bx, by, bz = float(g.iloc[0].bx), float(g.iloc[0].by), float(g.iloc[0].bz)
+                samples = [tuple(float(v) for v in row) for row in g[["ax", "ay", "az", "gx", "gy", "gz"]].itertuples(index=False)]
+                onset = find_onset(samples, (bx, by, bz))
+                if onset is None:
+                    continue
+                seg = segment_from_onset(samples, (bx, by, bz), onset)
+                if seg is None:
+                    continue
+                feats = features_from_segment(seg)
+                self.assertEqual(len(feats), 44)
+                for fv in feats:
+                    self.assertTrue(math.isfinite(fv))
+                pred, conf = forest.predict(feats)
+                total += 1
+                per_class_counts[label] += 1
+                if pred == label:
+                    correct += 1
+                    per_class_correct[label] += 1
+
+        self.assertGreaterEqual(total, 180)
+        overall_acc = correct / total
+        self.assertGreaterEqual(overall_acc, 0.95, f"Akurasi model deployed {overall_acc:.4f} di bawah 95%")
+        for lbl in ("ROCK", "PAPER", "SCISSORS"):
+            self.assertGreaterEqual(per_class_counts[lbl], 50)
+            class_acc = per_class_correct[lbl] / per_class_counts[lbl]
+            self.assertGreaterEqual(class_acc, 0.95, f"Akurasi kelas {lbl} ({class_acc:.4f}) di bawah 95%")
+
+
+class EdgeClientMLTests(unittest.TestCase):
+    """Test EdgeDeviceClient with Machine Learning as primary classifier."""
+
+    def test_edge_device_client_ml_defaults(self):
+        from src.edge.edge_client import EdgeDeviceClient
+        from src.engine.pairing import PairingToken
+
+        tok = PairingToken(session_id="test-ml-session", player_id="PLAYER_A")
+        client = EdgeDeviceClient(token=tok, use_ml=True)
+        self.assertEqual(client.classifier.mode, "ML")
+        self.assertIsInstance(client.classifier, HybridGestureClassifier)
+
+    def test_non_finite_sensor_samples_safely_rejected(self):
+        from src.edge.edge_client import EdgeDeviceClient
+        from src.engine.pairing import PairingToken
+
+        tok = PairingToken(session_id="test-nan-session", player_id="PLAYER_A")
+        client = EdgeDeviceClient(token=tok, use_ml=True)
+        client.classifier.calibrate([SensorSample(0.0, 0.0, 9.81, timestamp=1.0)])
+
+        nan_sample = SensorSample(float("nan"), 0.0, 9.81, timestamp=2.0)
+        res = client.feed_sensor_sample(nan_sample, publish_live_telemetry=False)
+        self.assertIsNone(res)
+        self.assertEqual(client.classifier.last_diagnostic.status, "REJECTED")
+
+        inf_sample = SensorSample(0.0, float("inf"), 9.81, timestamp=2.1)
+        res2 = client.feed_sensor_sample(inf_sample, publish_live_telemetry=False)
+        self.assertIsNone(res2)
+        self.assertEqual(client.classifier.last_diagnostic.status, "REJECTED")
+
+    def test_single_choice_lock_per_round_with_ml(self):
+        from src.edge.edge_client import EdgeDeviceClient
+        from src.engine.pairing import PairingToken
+
+        published_choices = []
+        def fake_publish(topic, payload, qos, retain):
+            if "choice" in topic:
+                published_choices.append(json.loads(payload))
+
+        tok = PairingToken(session_id="test-round-session", player_id="PLAYER_A")
+        client = EdgeDeviceClient(token=tok, use_ml=True, publish_fn=fake_publish)
+        client.classifier.calibrate([SensorSample(0.0, 0.0, 9.81, timestamp=1.0)])
+        client.round_active = True
+        client.active_round_id = 7
+
+        # Feed gesture stream from tiny_model (ROCK)
+        t0 = 100.0
+        for i, s in enumerate(rest(6) + shake("ROCK") + rest(4)):
+            sample = SensorSample(*s, timestamp=t0 + i * DT)
+            client.feed_sensor_sample(sample, publish_live_telemetry=False)
+
+        # Feeding more samples in same round must not emit duplicate choices
+        for i, s in enumerate(shake("ROCK") + rest(4)):
+            sample = SensorSample(*s, timestamp=t0 + 50.0 + i * DT)
+            client.feed_sensor_sample(sample, publish_live_telemetry=False)
+
+        self.assertEqual(len(published_choices), 1)
+        self.assertEqual(published_choices[0]["choice"], "ROCK")
+        self.assertEqual(published_choices[0]["round_id"], 7)
+
+
+class MQTTStabilityAndRoomPersistenceTests(unittest.TestCase):
+    """Test MQTT room identifier and topic persistence across server restarts."""
+
+    def test_resolve_stable_session_id_persistence(self):
+        from src.engine.pairing import (
+            DEFAULT_SESSION_FILE,
+            load_persistent_session_id,
+            resolve_stable_session_id,
+            save_persistent_session_id,
+        )
+
+        with tempfile.TemporaryDirectory() as d:
+            fpath = os.path.join(d, "test_session.json")
+            save_persistent_session_id("room_persisten_123", filepath=fpath)
+            loaded = load_persistent_session_id(filepath=fpath)
+            self.assertEqual(loaded, "room_persisten_123")
+
+    def test_room_id_unchanged_across_runtime_contexts(self):
+        from src.engine.server import GameRuntimeContext
+
+        ctx1 = GameRuntimeContext(session_id="room_tetap_456")
+        self.assertEqual(ctx1.engine.session_id, "room_tetap_456")
+
+        # Simulate restart without passing session_id
+        with patch.dict(os.environ, {}, clear=True):
+            ctx2 = GameRuntimeContext()
+            self.assertEqual(ctx2.engine.session_id, "room_tetap_456")
+            self.assertEqual(ctx1.bridge.topics.game_state(), ctx2.bridge.topics.game_state())
+            self.assertEqual(
+                ctx1.bridge.topics.player_choice("PLAYER_A"),
+                ctx2.bridge.topics.player_choice("PLAYER_A"),
+            )
 
 
 if __name__ == "__main__":

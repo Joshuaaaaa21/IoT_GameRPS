@@ -19,7 +19,10 @@ import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else os.getcwd()
-sys.path.insert(0, HERE)
+ROOT = os.path.dirname(HERE)
+for p in (HERE, os.path.join(ROOT, "src", "edge"), ROOT):
+    if p not in sys.path:
+        sys.path.insert(0, p)
 for p in glob.glob("/kaggle/input/**/ml_features.py", recursive=True):
     sys.path.insert(0, os.path.dirname(p))
 
@@ -33,7 +36,10 @@ from sklearn.model_selection import (LeaveOneGroupOut, RepeatedStratifiedKFold, 
 from sklearn.pipeline import make_pipeline  # noqa: E402
 from sklearn.preprocessing import StandardScaler  # noqa: E402
 
-import ml_features as mf  # noqa: E402
+try:
+    import ml_features as mf  # noqa: E402
+except ImportError:
+    from src.edge import ml_features as mf  # noqa: E402
 
 LABELS = ["ROCK", "PAPER", "SCISSORS"]
 REQUIRED = ["trial_id", "label", "person", "device", "t_ms",

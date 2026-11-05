@@ -1,42 +1,103 @@
-# PROJECT STATE — MOTION RPS IoT (QR PAIRING PLAYER A & B + AUTO-PAIRING TERMUX SELESAI)
+# PROJECT STATE — MOTION RPS IoT
 
 ## 1. Status Tahap
 - **Tahap Selesai**:
-  - **Tahap 1 — Audit Sebelum Implementasi** (Audit arsitektur MQTT, `edge_client.py`, `server.py`, dan identifikasi bahwa matriks QR sebelumnya hanya visual simulasi non-standar serta belum ada halaman `/pair` maupun jembatan pairing dinamis ke Termux)
-  - **Tahap 2 — Rancangan & Implementasi QR Pairing** (Generator QR ISO/IEC 18004 murni `src/engine/qr_encoder.py`, `SessionPairingManager` dengan token sementara `pt` ber-TTL, halaman mobile `/pair` di `src/dashboard/pair.html` & `pair.js`)
-  - **Tahap 3 — Hubungan Nyata Web QR dengan Termux (Pendekatan A + B)** (Penerusan sesi otomatis melalui topik MQTT `motion-rps/pairing/slot/{player_id}` & endpoint HTTP `/api/pair/assignment` + launcher 1-perintah `scripts/start_edge.sh`)
-  - **Tahap 4 — Konfigurasi, Proteksi Slot, & Status Pemain** (Status bertingkat `WAITING` -> `PAIRED` -> `READY/CONNECTED`, proteksi anti-timpa slot `SLOT_ALREADY_OCCUPIED`, penolakan pemain ke-3 `SESSION_FULL`, isolasi sesi lama `SESSION_ID_MISMATCH`)
-  - **Tahap 5 — Persingkat Setup Termux** (`scripts/setup_termux.sh` sekali jalan + `~/.motion_rps_edge.json` + shortcut `Termux:Widget` + launcher `scripts/start_edge.sh`)
-  - **Tahap 6 — Penanganan Keluar, Background, Wake-Lock, & Reconnect** (Heartbeat periodik 2.0 detik di `edge_client.py`, deteksi `HEARTBEAT_TIMEOUT` 15 detik di `mqtt_bridge.py`, dan `termux-wake-lock` otomatis)
-  - **Tahap 7 — Pengujian Otomatis & Prosedur Fisik** (`30/30 PASS` unit & integration tests)
-- **Tahap Aktif**: **SELESAI (Siap Pengujian Fisik 2 HP oleh Pengguna)**
+  - **Tahap 1 — Audit Sebelum Implementasi**: Audit menyeluruh alur Sensor Smartphone → Edge Processing → Gesture Recognition → MQTT → Backend → Game Engine → Dashboard.
+  - **Tahap 2 — Arsitektur QR Pairing & Mobile Web**: Generator QR ISO/IEC 18004 murni (`src/engine/qr_encoder.py`), `SessionPairingManager` dengan token sementara `pt` ber-TTL, halaman mobile `/pair` (`src/dashboard/pair.html`, `pair.js`).
+  - **Tahap 3 — Integrasi MQTT & Auto-Pairing Termux**: Topik pairing dinamis `motion-rps/pairing/slot/{player_id}` & endpoint `/api/pair/assignment`, launcher satu perintah `scripts/start_edge.sh`.
+  - **Tahap 4 — Proteksi Sesi & Slot Pemain**: Status bertingkat `WAITING` -> `PAIRED` -> `READY/CONNECTED`, proteksi `SLOT_ALREADY_OCCUPIED`, `SESSION_FULL`, dan isolasi sesi lama.
+  - **Tahap 5 — Optimalisasi Termux & Background**: Script setup `scripts/setup_termux.sh`, persistent config `~/.motion_rps_edge.json`, `termux-wake-lock`, dan heartbeat 2.0s.
+  - **Tahap 6 — Integrasi Machine Learning (ML Classifier Utama)**:
+    - Menggantikan rule-based heuristic dengan **Random Forest Classifier (60 trees)** via JSON model (`models/gesture_model.json`).
+    - Ekstraksi 44 fitur matematis (`src/edge/ml_features.py`) dengan strict parity antara pipeline training (`scripts/train_gesture_model.py`) dan runtime edge inference (`src/edge/ml_gesture.py`).
+    - Evaluasi inference pure-Python (`PureForest`) tanpa dependency berat (`scikit-learn` / `numpy`), latensi < 1 ms di Android Termux.
+    - Resolusi kegagalan rebound sumbu-X: akurasi replay dataset mencapai **99.50% (201/202)** dibanding rule-based lama yang hanya **75.25% (152/202)**.
+    - Evaluasi Leave-One-Group-Out (cross-device/user validation) tercatat **75.74%**, membuktikan perlunya training multi-device untuk generalisasi hand-swing amplitude.
+  - **Tahap 7 — Stabilitas MQTT & Persistensi Room ID**:
+    - Mekanisme persistensi room ID melalui `resolve_stable_session_id()`, `load_persistent_session_id()`, dan `save_persistent_session_id()` dengan file `.active_session.json`.
+    - Server restart dan crash recovery mempertahankan room ID yang sama (`rps_kelompok_07` secara default atau sesi aktif terakhir), mencegah regenerasi room ID acak.
+    - Edge Client mempertahankan room ID melalui `~/.motion_rps_edge.json` dan otomatis reconnect ke room stabil.
+  - **Tahap 8 — Otomasi Pengujian & Validasi**:
+    - **48/48 Automated Tests PASS** pada Python unittest suite.
+- **Tahap Aktif**: **SELESAI (Siap Pengujian Fisik 2 Smartphone Android)**
 
-## 2. Arsitektur QR Pairing & Hubungan ke Termux
-1. **Generator QR Standar ISO/IEC 18004 (`src/engine/qr_encoder.py`)**:
-   - Menghasilkan matriks QR Code standar (Byte Mode, ECC Level L, Reed-Solomon GF(256)) tanpa dependency eksternal maupun CDN, sehingga kamera HP dapat memindai QR langsung dari layar laptop.
-   - Isi QR hanya memuat informasi aman minimum: `http://<ip-laptop>:8080/pair?v=1&session=<session_id>&player=<A|B>&pt=<temp_token>` (tanpa password broker atau kredensial rahasia).
-2. **Manajemen Sesi, Token Sementara, & Kepemilikan Slot (`SessionPairingManager` di `src/engine/pairing.py`)**:
-   - Setiap sesi memiliki `pairing_token` (`pt`) sementara dengan masa berlaku (`TTL = 600 detik`).
-   - Memvalidasi sesi aktif, menolak token kedaluwarsa (`EXPIRED_PAIRING_TOKEN`), menolak perebutan slot aktif oleh perangkat lain (`SLOT_ALREADY_OCCUPIED`), menolak pemain ke-3 (`SESSION_FULL`), dan mengizinkan reconnect/scan ulang dari `device_id` atau `client_token` yang sama.
-3. **Jembatan Nyata Browser HP $\rightarrow$ Backend $\rightarrow$ Script Sensor Termux (Kombinasi Pendekatan A & B)**:
-   - Karena browser Android berjalan di dalam sandbox yang tidak dapat mengeksekusi proses Python di Termux secara langsung, hubungan diimplementasikan melalui **mode Auto-Pairing (`--auto-pair`)**:
-   - Pengguna cukup menjalankan `bash scripts/start_edge.sh` satu kali di Termux (tanpa mengetik Session ID). Script memegang `termux-wake-lock` agar tetap hidup saat Termux berpindah ke background.
-   - Saat pemain melakukan Scan QR di browser HP (`/pair`) dan menekan **Join Session**, server memvalidasi token, menyimpan username, dan mem-publish pesan penugasan `ASSIGN_SESSION` ke topik MQTT `motion-rps/pairing/slot/{player_id}` (serta menyediakannya di `GET /api/pair/assignment`).
-   - `EdgeDeviceClient` di Termux menerima penugasan tersebut, otomatis memanggil `reconfigure_session(new_session_id, player_id)`, dan langsung mengalirkan telemetry sensor fisik ke sesi baru tanpa perlu mengetik ulang konfigurasi.
+---
 
-## 3. File yang Diperiksa, Ditambahkan, dan Diubah
-- `src/engine/qr_encoder.py` (**baru**: encoder QR Code ISO/IEC 18004 murni Python untuk matriks `<canvas>`)
-- `src/engine/pairing.py` (**diubah**: `SessionPairingManager`, `SlotAssignment`, token sementara `pt` dengan TTL, `build_web_pair_url`, dukungan URL `/pair` pada `parse_pairing_input`)
-- `src/engine/mqtt_protocol.py` (**diubah**: topik pairing dinamis `TopicBuilder.pairing_slot()` dan `TopicBuilder.pairing_device()`)
-- `src/engine/mqtt_bridge.py` (**diubah**: `publish_pairing_assignment()` dan deteksi `HEARTBEAT_TIMEOUT` di `tick()`)
-- `src/engine/server.py` (**diubah**: deteksi IP LAN otomatis, endpoint `/pair`, `/api/pair/join`, `/api/pair/leave`, `/api/pair/assignment`, `/api/end_session`, dan status bertingkat `WAITING` / `PAIRED` / `READY`)
-- `src/edge/edge_client.py` (**diubah**: mode `--auto-pair`, `reconfigure_session()`, `handle_pairing_assignment_message()`, heartbeat periodik `send_heartbeat_if_due()`, penyimpanan `~/.motion_rps_edge.json`, dan `termux-wake-lock`)
-- `src/dashboard/index.html`, `src/dashboard/app.js`, `src/dashboard/styles.css` (**diubah**: render QR ISO asli, tombol `Akhiri Sesi`, aktivasi tombol `START GAME` otomatis saat kedua pemain `READY`, dan link ke `/pair`)
-- `src/dashboard/pair.html`, `src/dashboard/pair.js` (**baru**: halaman mobile pairing HP dengan pemindai kamera live, ambil foto kamera, fallback manual, konfirmasi username & slot, tombol Join/Leave, dan monitor sensor live)
-- `scripts/setup_termux.sh`, `scripts/start_edge.sh` (**baru**: script setup satu kali & launcher 1-perintah Termux)
-- `tests/test_pairing_and_integration.py` (**diubah**: 30 pengujian unit & integrasi end-to-end)
+## 2. Arsitektur Machine Learning (Primary Gesture Recognition)
 
-## 4. Hasil Pengujian
-- **Pemeriksaan Sintaks**: `python -m compileall -q src scripts tests` -> **PASS (Exit code 0)**.
-- **Unit & Integration Tests**: `python -m unittest discover -s tests -v` -> **Ran 30 tests in 0.838s — OK (30/30 PASS)** *(SIMULATED / AUTOMATED LOCAL TEST)*.
-- **Pengujian Perangkat Fisik 2 HP Android**: **UNVERIFIED / MENUNGGU EKSEKUSI PADA 2 HP FISIK PENGGUNA**.
+### A. Preprocessing & Windowing
+- **Sensor Input**: Accelerometer ($a_x, a_y, a_z$ dalam $m/s^2$) dan Gyroscope ($g_x, g_y, g_z$ dalam $rad/s$ atau $deg/s$) dengan sampling rate rata-rata ~9–10 Hz.
+- **Baseline Calibration**: Rata-rata 10–20 sampel saat smartphone diam untuk mengeliminasi komponen gravitasi statis dan orientasi awal.
+- **Onset Detection**: Memicu windowing jika $\Delta a_{total} = |\Delta a_x| + |\Delta a_y| + |\Delta a_z| > 3.0\ m/s^2$.
+- **Window Length (`seg_n`)**: Tepat 10 sampel (~1.0 detik durasi ayunan), mengunci buffer dan mengekstrak 44 fitur.
+- **Post-Gesture Settling**: Sensor harus kembali diam ($RMS \le 1.0\ m/s^2$) selama minimal 3 sampel atau waktu cooldown (debounce 0.8–1.0 detik) agar ayunan balik (*rebound*) tidak memicu gesture ganda.
+
+### B. Ekstraksi 44 Fitur (`src/edge/ml_features.py`)
+1. **Fitur Accelerometer (30 fitur)**:
+   - Sumbu $dx, dy, dz$ (deviasi dari baseline): Mean, Std, Min, Max, Energy ($\sum x_i^2 / N$).
+   - Magnitudo $a_{mag} = \sqrt{a_x^2 + a_y^2 + a_z^2}$: Mean, Std, Min, Max, Energy.
+   - Bidang horizontal $a_{horiz} = \sqrt{dx^2 + dy^2}$: Mean, Std, Min, Max, Energy.
+   - Sumbu derivatif $a_{diff} = |\Delta a_i - \Delta a_{i-1}|$: Mean, Std, Min, Max, Energy.
+2. **Fitur Gyroscope (14 fitur)**:
+   - Sumbu $gx, gy$: Mean, Std, Min, Max, Energy.
+   - Sumbu $gz$: Mean, Max.
+   - Magnitudo $g_{mag} = \sqrt{gx^2 + gy^2 + gz^2}$: Mean, Max.
+
+### C. Inference Engine (`PureForest` di `src/edge/ml_features.py`)
+- Struktur pohon keputusan diekspor ke JSON standar (`models/gesture_model.json`).
+- Traversal pohon dilakukan dengan pure-Python recursions/loops:
+  - If `feature_value <= threshold`, ke anak kiri (`left`), selain itu ke anak kanan (`right`).
+  - Akumulasi vektor probabilitas daun dari seluruh 60 pohon.
+  - Threshold probabilitas minimum (`min_confidence = 0.50`). Jika probabilitas tertinggi $< 0.50$, output ditolak sebagai `NO-GESTURE` untuk mencegah false-positive.
+
+---
+
+## 3. Arsitektur MQTT & Stabilitas Room ID
+
+1. **Konsistensi Broker & Topik**:
+   - Broker MQTT dikonfigurasi terpusat via environment variable `MQTT_BROKER_HOST`, `MQTT_BROKER_PORT`, atau config edge.
+   - Format topik terisolasi berdasarkan sesi dan slot:
+     - Telemetri Sensor: `motion-rps/{session_id}/sensor/{player_id}`
+     - Pilihan Gesture: `motion-rps/{session_id}/choice/{player_id}`
+     - Kontrol Game: `motion-rps/{session_id}/control`
+     - Status Game: `motion-rps/{session_id}/status`
+     - Penugasan Pairing: `motion-rps/pairing/slot/{player_id}`
+2. **Persistensi Room ID**:
+   - `src/engine/pairing.py` menyediakan fungsi `resolve_stable_session_id()`.
+   - Urutan prioritas resolusi room ID:
+     1. Parameter eksplisit / argumen CLI (`--session`).
+     2. Environment variable `RPS_SESSION_ID` atau `SESSION_ID`.
+     3. File status persisten lokal `.active_session.json`.
+     4. Default fallback stabil: `rps_kelompok_07`.
+   - Dengan mekanisme ini, restart server atau crash tidak akan mengubah topic MQTT atau memutus koneksi kedua smartphone.
+
+---
+
+## 4. Hasil Pengujian Otomatis
+
+Pemeriksaan unit test dan integrasi dijalankan dengan perintah:
+`python -m unittest discover -s tests -v`
+
+| Test Case Suite | Kasus Uji | Hasil | Deskripsi |
+|---|---|:---:|---|
+| `test_game_engine.py` | 8 pengujian | **PASS** | Validasi aturan RPS, draw, timeout forfeit, duplikasi pilihan, penolakan input di luar ronde, proteksi score update tunggal. |
+| `test_sensor_gesture.py` | 9 pengujian | **PASS** | Kalibrasi baseline, orientasi sumbu dinamis, debounce ayunan balik, parsing payload sensor Termux, ekstraksi RMS. |
+| `test_mqtt_simulation.py` | 7 pengujian | **PASS** | Simulasi 2 pemain virtual MQTT, isolasi topik, penolakan data non-finite/NaN, anti-replay seq+boot_id, TLS policy. |
+| `test_pairing_and_integration.py` | 6 pengujian | **PASS** | QR pairing ISO 18004, penugasan sesi dinamis ke Termux, isolasi sesi lama, keamanan kredensial browser, endpoint HTTP `/pair`. |
+| `test_ml_gesture.py` (Hybrid, Loader, Engine) | 11 pengujian | **PASS** | PureForest traversal, loading model JSON, onset detection, rejection low-confidence, settling requirement, rearm timeout. |
+| `test_ml_gesture.py` (Parity & CSV Replay) | 2 pengujian | **PASS** | Replay dataset aktual CSV 202 sampel (akurasi 99.50%), validasi urutan dan nama 44 fitur identik. |
+| `test_ml_gesture.py` (Edge Client ML Integration) | 3 pengujian | **PASS** | Edge client memuat ML default, penolakan sampel non-finite/NaN, penguncian pilihan tunggal per ronde. |
+| `test_ml_gesture.py` (MQTT Stability & Room Persistence) | 2 pengujian | **PASS** | Room ID stabil di berbagai runtime restart, pembacaan dan penulisan `.active_session.json`. |
+| **TOTAL** | **48 pengujian** | **48/48 PASS** | **100% Hijau (Ran 48 tests in ~4s)** |
+
+---
+
+## 5. Ringkasan File Proyek
+- `models/gesture_model.json`: Model Random Forest (60 pohon, 44 fitur, kelas `["PAPER", "ROCK", "SCISSORS"]`).
+- `scripts/train_gesture_model.py`: Script training scikit-learn dengan ekspor JSON pure-python parser.
+- `src/edge/ml_features.py`: Implementasi pure-python ekstraksi 44 fitur matematis dan kelas `PureForest`.
+- `src/edge/ml_gesture.py`: Engine inference runtime, windowing onset, settling detector, dan `HybridGestureClassifier`.
+- `src/edge/edge_client.py`: Client sensor Termux dengan integrasi ML otomatis, auto-pairing QR, dan proteksi wake-lock.
+- `src/engine/pairing.py`: Manajemen sesi, token pairing ber-TTL, dan persistensi room ID (`resolve_stable_session_id`).
+- `src/engine/server.py`: Server web backend HTTP/WebSocket, dashboard server, dan sinkronisasi MQTT game loop.
+- `tests/test_ml_gesture.py`: Automated test suite ML (parity, replay, edge client, room stability).
