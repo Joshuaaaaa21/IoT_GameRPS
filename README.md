@@ -87,6 +87,7 @@ Script ini memeriksa `termux-sensor`, memasang dependency `requirements.txt`, me
    python -m src.engine.server --host 0.0.0.0 --port 8080 --connect-mqtt
    ```
    Buka `http://127.0.0.1:8080` di browser laptop.
+   Tombol **New session** mereset ronde dan pairing, tetapi mempertahankan Session ID aktif (default: `rps-kelompok12`) agar ID room tidak berubah-ubah.
 2. **Di Termux HP A & HP B** (cukup 1 perintah, tanpa mengetik Session ID):
    ```bash
    bash scripts/start_edge.sh

@@ -28,7 +28,6 @@ from src.engine.pairing import (
     build_termux_cli_command,
     build_web_pair_url,
     encode_qr_matrix,
-    generate_session_id,
     parse_pairing_input,
     resolve_stable_session_id,
     save_persistent_session_id,
@@ -123,7 +122,7 @@ class GameRuntimeContext:
         with self.lock:
             old_sid = self.engine.session_id
             self.simulated_players.clear()
-            new_sid = custom_session_id.strip() if custom_session_id else generate_session_id("rps")
+            new_sid = custom_session_id.strip() if custom_session_id else old_sid
             save_persistent_session_id(new_sid)
             for pid in (PLAYER_A, PLAYER_B):
                 self.bridge.publish_pairing_assignment(

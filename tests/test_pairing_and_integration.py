@@ -30,6 +30,21 @@ from src.engine.server import GameRuntimeContext, create_http_handler, public_br
 
 
 class TestPairingAndIntegration(unittest.TestCase):
+    def test_new_session_keeps_current_session_id_by_default(self) -> None:
+        ctx = GameRuntimeContext(session_id="rps-kelompok12")
+        previous_engine = ctx.engine
+        previous_pairing_token = ctx.pairing_manager.pairing_token
+        ctx.engine.set_player_connection(PLAYER_A, True)
+        ctx.engine.set_player_connection(PLAYER_B, True)
+        ctx.engine.start_round()
+
+        session_id = ctx.create_new_session()
+
+        self.assertEqual(session_id, "rps-kelompok12")
+        self.assertIsNot(ctx.engine, previous_engine)
+        self.assertEqual(ctx.engine.state, GameState.WAITING_FOR_PLAYERS)
+        self.assertNotEqual(ctx.pairing_manager.pairing_token, previous_pairing_token)
+
     def test_pairing_qr_and_fallback_formats(self) -> None:
         sid = generate_session_id("rps")
         token_a = PairingToken(
