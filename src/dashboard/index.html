@@ -142,7 +142,7 @@
                 <div class="player-icon" aria-label="Player A">Player A</div>
                 <span id="conn-status-a" class="badge offline">Not joined</span>
             </div>
-            
+
             <div class="center-container" style="margin-bottom: 32px;">
                 <div class="username-row">
                     <input type="text" id="input-username-a" value="Player A" maxlength="32" aria-label="Player A name">
@@ -223,25 +223,17 @@
                 </div>
             </div>
 
-            <div class="countdown-box">
-                <div class="countdown-header">
-                    <span class="countdown-icon" aria-hidden="true">⏳</span>
-                    <span class="countdown-label">Starting in</span>
-                </div>
-                <div id="countdown-display" class="countdown-number">-</div>
-            </div>
-
             <div class="result-box">
                 <div class="result-card-header">
                     <span class="result-badge-title">Round Summary</span>
                 </div>
-                <div class="result-details-grid">
-                    <div class="result-cell" style="display: inline-flex; flex-direction: column; align-items: center;"
+                <div id="result-details-grid" class="result-details-grid">
+                    <div class="result-cell">
                         <span class="result-label">Last result</span>
                         <strong id="round-outcome-display" class="result-value">-</strong>
                     </div>
-                    <div class="result-separator" aria-hidden="true"></div>
-                    <div class="result-cell" style="display: inline-flex; flex-direction: column; align-items: center;">
+                    <div id="winner-result-separator" class="result-separator" aria-hidden="true"></div>
+                    <div id="winner-result-cell" class="result-cell">
                         <span class="result-label">Winner</span>
                         <strong id="winner-name-display" class="result-value winner-text">-</strong>
                     </div>
@@ -278,7 +270,7 @@
                     <button type="button" id="btn-save-name-b">Save</button>
                 </div>
                 <span id="save-name-status-b" class="save-name-status" role="status" aria-live="polite"></span>
-                
+
                 <p class="score-display">Score <strong id="score-b">0</strong></p>
 
                 <span class="outcome-tag" id="outcome-b" aria-live="polite"></span>
@@ -327,6 +319,13 @@
             </details>
         </section>
     </main>
+
+    <div id="countdown-overlay" class="countdown-overlay" hidden>
+        <div class="countdown-card" role="status" aria-labelledby="countdown-title">
+            <p id="countdown-title" class="countdown-title">Don't move your phone</p>
+            <div id="countdown-display" class="countdown-number">5</div>
+        </div>
+    </div>
 
     <script src="/app.js"></script>
 </body>

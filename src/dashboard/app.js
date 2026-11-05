@@ -2,6 +2,8 @@
 
 let lastSessionId = null;
 let sessionActive = true;
+let countdownWasActive = false;
+let countdownGoUntil = 0;
 const dirtyNames = { a: false, b: false };
 const simulatedMoves = { a: null, b: null };
 
@@ -296,17 +298,44 @@ async function refreshState() {
         }
 
         const cdEl = document.getElementById("countdown-display");
-        if (data.state === "COUNTDOWN" && data.round_deadline) {
+        const countdownOverlay = document.getElementById("countdown-overlay");
+        const countdownTitle = document.getElementById("countdown-title");
+        const isCountdown = data.state === "COUNTDOWN" && data.round_deadline != null;
+        const now = Date.now();
+        if (isCountdown) {
             const rem = Math.max(0, data.round_deadline - data.server_time);
-            cdEl.textContent = rem.toFixed(1) + "s";
+            if (rem > 0) {
+                cdEl.textContent = Math.ceil(rem) + "s";
+                countdownTitle.textContent = "Don't move your phone";
+                countdownTitle.classList.remove("is-go");
+                countdownGoUntil = 0;
+                countdownWasActive = true;
+                countdownOverlay.hidden = false;
+            } else {
+                if (!countdownGoUntil) countdownGoUntil = now + 900;
+                countdownTitle.textContent = "GO!!!";
+                countdownTitle.classList.add("is-go");
+                cdEl.textContent = "";
+                countdownOverlay.hidden = now >= countdownGoUntil;
+            }
         } else {
-            cdEl.textContent = "-";
+            if (countdownWasActive) countdownGoUntil = now + 900;
+            countdownWasActive = false;
+            const showGo = now < countdownGoUntil;
+            countdownOverlay.hidden = !showGo;
+            countdownTitle.textContent = showGo ? "GO!!!" : "Don't move your phone";
+            countdownTitle.classList.toggle("is-go", showGo);
+            if (showGo) cdEl.textContent = "";
         }
 
         const last = data.last_result;
+        const canceled = last && last.outcome === "VOID_NO_MOVES";
         document.getElementById("round-outcome-display").textContent = last ? displayOutcome(last.outcome) : "-";
         document.getElementById("winner-name-display").textContent =
             last && last.winner_username ? last.winner_username : (last ? displayOutcome(last.outcome) : "-");
+        document.getElementById("result-details-grid").classList.toggle("is-canceled", Boolean(canceled));
+        document.getElementById("winner-result-cell").classList.toggle("is-hidden", Boolean(canceled));
+        document.getElementById("winner-result-separator").classList.toggle("is-hidden", Boolean(canceled));
 
         // Enable START GAME only when both players have active sensor connections and no round is in countdown
         const startBtn = document.getElementById("btn-start-game");
