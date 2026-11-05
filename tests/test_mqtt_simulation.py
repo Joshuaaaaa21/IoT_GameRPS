@@ -21,7 +21,12 @@ class TestMQTTSimulation(unittest.TestCase):
         self.bridge = EngineMQTTBridge(engine=self.engine, publish_fn=capture_publish)
 
         def send_to_bridge(topic: str, payload: str, qos: int, retain: bool) -> None:
-            self.bridge.handle_raw_message(topic, payload, now=100.0)
+            message = json.loads(payload)
+            self.bridge.handle_raw_message(
+                topic,
+                payload,
+                now=float(message.get("timestamp", 100.0)),
+            )
 
         self.player_a = VirtualPlayer(self.session_id, PLAYER_A, publish_fn=send_to_bridge)
         self.player_b = VirtualPlayer(self.session_id, PLAYER_B, publish_fn=send_to_bridge)
@@ -79,8 +84,12 @@ class TestMQTTSimulation(unittest.TestCase):
         self.assertEqual(self.engine.state, GameState.COUNTDOWN)
 
         # 4. Players send choices via MQTT
-        self.player_a.send_choice("PAPER", round_id=1, now_ms=101_000)
-        self.player_b.send_choice("ROCK", round_id=1, now_ms=101_500)
+        self.player_a.send_choice("PAPER", round_id=1, now_ms=105_100)
+        self.player_b.send_choice("ROCK", round_id=1, now_ms=105_500)
+
+        self.assertEqual(self.engine.state, GameState.COUNTDOWN)
+        self.assertFalse(self.bridge.tick(now=107.9))
+        self.assertTrue(self.bridge.tick(now=108.0))
 
         # 5. Verify round result & state published to MQTT outbox
         self.assertEqual(self.engine.state, GameState.FINISHED)
@@ -118,7 +127,7 @@ class TestMQTTSimulation(unittest.TestCase):
         self.assertEqual(res_p, "PLAYER_ID_MISMATCH")
 
         # Duplicate msg_id protection (e.g. QoS 1 re-delivery)
-        self.player_a.send_choice("SCISSORS", round_id=1, msg_id="fixed-msg-001", now_ms=101_000)
+        self.player_a.send_choice("SCISSORS", round_id=1, msg_id="fixed-msg-001", now_ms=106_000)
         ok_dup, res_dup = self.bridge.handle_raw_message(
             self.topics.player_choice(PLAYER_A),
             json.dumps({
@@ -211,12 +220,12 @@ class TestMQTTSimulation(unittest.TestCase):
             json.dumps({"session_id": self.session_id, "command": "START_GAME"}),
             now=100.0,
         )
-        self.player_a.send_choice("SCISSORS", round_id=1, now_ms=101_000)
+        self.player_a.send_choice("SCISSORS", round_id=1, now_ms=105_100)
 
-        # Before deadline (105.0)
-        self.assertFalse(self.bridge.tick(now=103.0))
-        # At deadline
-        self.assertTrue(self.bridge.tick(now=105.5))
+        # Before the gesture window closes.
+        self.assertFalse(self.bridge.tick(now=107.9))
+        # At the end of the gesture window.
+        self.assertTrue(self.bridge.tick(now=108.0))
         self.assertEqual(self.engine.state, GameState.FINISHED)
         self.assertEqual(self.engine.last_result.outcome, RoundOutcome.FORFEIT_B)
 

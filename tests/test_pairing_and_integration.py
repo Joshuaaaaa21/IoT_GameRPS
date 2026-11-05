@@ -237,14 +237,18 @@ class TestPairingAndIntegration(unittest.TestCase):
         self.assertEqual(ctx.engine.players[PLAYER_B].username, "Dodi")
 
         # Play Round 1: Rina (ROCK) vs Dodi (SCISSORS) -> Rina wins (score 1 - 0)
+        round_started_at = time.time() - ctx.engine.countdown_seconds - 0.1
         ctx.bridge.handle_raw_message(
             TopicBuilder(initial_sid).game_command(),
             json.dumps({"session_id": initial_sid, "command": "START_GAME"}),
+            now=round_started_at,
         )
         for s in TermuxSensorReader.generate_simulated_gesture_stream("LEFT", base_time=20.0):
             edge_a.feed_sensor_sample(s)
         for s in TermuxSensorReader.generate_simulated_gesture_stream("RIGHT", base_time=20.2):
             edge_b.feed_sensor_sample(s)
+        self.assertEqual(ctx.engine.state, GameState.COUNTDOWN)
+        ctx.bridge.tick(now=ctx.engine.round_deadline)
         self.assertEqual(ctx.engine.players[PLAYER_A].score, 1)
 
         # Test Heartbeat Timeout & Reconnect:
@@ -432,9 +436,12 @@ class TestPairingAndIntegration(unittest.TestCase):
             )
 
             http_post("/api/command", {"command": "START_GAME"})
+            ctx.engine.countdown_deadline = time.time() - 0.1
             http_post("/api/simulate_edge", {"player_id": PLAYER_A, "action": "GESTURE", "gesture": "LEFT"})
             http_post("/api/simulate_edge", {"player_id": PLAYER_B, "action": "GESTURE", "gesture": "UP"})
 
+            self.assertEqual(http_get("/api/state")["state"], "COUNTDOWN")
+            ctx.bridge.tick(now=ctx.engine.round_deadline)
             st_after = http_get("/api/state")
             self.assertEqual(st_after["state"], "FINISHED")
             self.assertEqual(st_after["players"][PLAYER_B]["score"], 1)

@@ -48,10 +48,12 @@ class TestGameEngine(unittest.TestCase):
             with self.subTest(a=choice_a, b=choice_b):
                 self.engine.reset_scores(confirm=True)
                 self.engine.start_round(now=10.0)
-                ok_a, _ = self.engine.submit_choice(PLAYER_A, choice_a, now=11.0)
-                ok_b, _ = self.engine.submit_choice(PLAYER_B, choice_b, now=12.0)
+                ok_a, _ = self.engine.submit_choice(PLAYER_A, choice_a, now=15.1)
+                ok_b, _ = self.engine.submit_choice(PLAYER_B, choice_b, now=15.2)
                 self.assertTrue(ok_a)
                 self.assertTrue(ok_b)
+                self.assertEqual(self.engine.state, GameState.COUNTDOWN)
+                self.engine.check_timeout(now=18.0)
                 self.assertEqual(self.engine.state, GameState.FINISHED)
                 res = self.engine.last_result
                 self.assertIsNotNone(res)
@@ -62,24 +64,30 @@ class TestGameEngine(unittest.TestCase):
 
     def test_duplicate_choice_and_single_score_update_per_round(self) -> None:
         r_id = self.engine.start_round(now=50.0)
-        ok1, reason1 = self.engine.submit_choice(PLAYER_A, "ROCK", round_id=r_id, now=51.0)
+        ok1, reason1 = self.engine.submit_choice(PLAYER_A, "ROCK", round_id=r_id, now=55.1)
         self.assertTrue(ok1)
         self.assertEqual(reason1, "ACCEPTED")
 
         # Duplicate choice from Player A before Player B moves
-        ok2, reason2 = self.engine.submit_choice(PLAYER_A, "PAPER", round_id=r_id, now=51.5)
+        ok2, reason2 = self.engine.submit_choice(PLAYER_A, "PAPER", round_id=r_id, now=55.5)
         self.assertFalse(ok2)
         self.assertEqual(reason2, "IGNORED_DUPLICATE_CHOICE")
         self.assertEqual(self.engine.players[PLAYER_A].current_choice, Choice.ROCK)
 
-        # Player B submits -> auto evaluates round
-        ok_b, _ = self.engine.submit_choice(PLAYER_B, "SCISSORS", round_id=r_id, now=52.0)
+        # Both choices are locked, but the gesture window remains open until its deadline.
+        ok_b, _ = self.engine.submit_choice(PLAYER_B, "SCISSORS", round_id=r_id, now=56.0)
         self.assertTrue(ok_b)
+        self.assertEqual(self.engine.state, GameState.COUNTDOWN)
+        with self.assertRaisesRegex(RuntimeError, "gesture window closes"):
+            self.engine.evaluate_round(now=56.5)
+        self.assertIsNone(self.engine.check_timeout(now=57.9))
+        self.engine.check_timeout(now=58.0)
+        self.assertEqual(self.engine.state, GameState.FINISHED)
         self.assertEqual(self.engine.players[PLAYER_A].score, 1)
 
         # Extra evaluation call or post-round submission must not increment score again
         self.engine.evaluate_round(force_timeout=True)
-        ok_late, reason_late = self.engine.submit_choice(PLAYER_A, "ROCK", round_id=r_id, now=53.0)
+        ok_late, reason_late = self.engine.submit_choice(PLAYER_A, "ROCK", round_id=r_id, now=58.1)
         self.assertFalse(ok_late)
         self.assertEqual(reason_late, "IGNORED_OUTSIDE_ACTIVE_ROUND")
         self.assertEqual(self.engine.players[PLAYER_A].score, 1)
@@ -92,22 +100,40 @@ class TestGameEngine(unittest.TestCase):
 
         # During round but wrong round_id
         self.engine.start_round(now=10.0)
-        ok_wrong, reason_wrong = self.engine.submit_choice(PLAYER_A, "ROCK", round_id=999, now=11.0)
+        ok_wrong, reason_wrong = self.engine.submit_choice(PLAYER_A, "ROCK", round_id=999, now=16.0)
         self.assertFalse(ok_wrong)
         self.assertEqual(reason_wrong, "IGNORED_WRONG_ROUND_ID")
 
+    def test_choice_window_starts_after_three_second_countdown(self) -> None:
+        engine = GameEngine(session_id="test-session-123")
+        engine.set_player_connection(PLAYER_A, True)
+        engine.set_player_connection(PLAYER_B, True)
+        engine.start_round(now=100.0)
+
+        accepted, reason = engine.submit_choice(PLAYER_A, "ROCK", now=102.9)
+        self.assertFalse(accepted)
+        self.assertEqual(reason, "IGNORED_DURING_COUNTDOWN")
+
+        accepted, reason = engine.submit_choice(PLAYER_A, "ROCK", now=103.0)
+        self.assertTrue(accepted)
+        self.assertEqual(reason, "ACCEPTED")
+        self.assertIsNone(engine.check_timeout(now=105.9))
+        result = engine.check_timeout(now=106.0)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.outcome, RoundOutcome.FORFEIT_B)
+
     def test_late_submission_and_timeout_forfeit(self) -> None:
-        self.engine.start_round(now=100.0)  # deadline = 105.0
-        ok_a, _ = self.engine.submit_choice(PLAYER_A, "PAPER", now=102.0)
+        self.engine.start_round(now=100.0)  # Countdown ends at 105; gesture window ends at 108.
+        ok_a, _ = self.engine.submit_choice(PLAYER_A, "PAPER", now=105.1)
         self.assertTrue(ok_a)
 
         # Player B sends after deadline
-        ok_b, reason_b = self.engine.submit_choice(PLAYER_B, "SCISSORS", now=106.0)
+        ok_b, reason_b = self.engine.submit_choice(PLAYER_B, "SCISSORS", now=108.0)
         self.assertFalse(ok_b)
         self.assertEqual(reason_b, "IGNORED_LATE_SUBMISSION")
 
-        # Engine checks timeout at t=106.0
-        result = self.engine.check_timeout(now=106.0)
+        # Engine checks timeout at the end of the gesture window.
+        result = self.engine.check_timeout(now=108.0)
         self.assertIsNotNone(result)
         self.assertEqual(result.outcome, RoundOutcome.FORFEIT_B)
         self.assertEqual(result.winner_id, PLAYER_A)
@@ -116,7 +142,7 @@ class TestGameEngine(unittest.TestCase):
 
     def test_both_players_timeout_void_round(self) -> None:
         self.engine.start_round(now=200.0)
-        result = self.engine.check_timeout(now=206.0)
+        result = self.engine.check_timeout(now=208.0)
         self.assertIsNotNone(result)
         self.assertEqual(result.outcome, RoundOutcome.VOID_NO_MOVES)
         self.assertIsNone(result.winner_id)
@@ -129,8 +155,9 @@ class TestGameEngine(unittest.TestCase):
         self.assertEqual(self.engine.players[PLAYER_A].username, "Andi")
 
         self.engine.start_round(now=10.0)
-        self.engine.submit_choice(PLAYER_A, "ROCK", now=11.0)
-        self.engine.submit_choice(PLAYER_B, "SCISSORS", now=12.0)
+        self.engine.submit_choice(PLAYER_A, "ROCK", now=15.1)
+        self.engine.submit_choice(PLAYER_B, "SCISSORS", now=15.2)
+        self.engine.check_timeout(now=18.0)
         self.assertEqual(self.engine.last_result.winner_username, "Andi")
         self.assertEqual(self.engine.players[PLAYER_A].score, 1)
 
