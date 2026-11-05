@@ -70,7 +70,7 @@ class GameEngine:
         self,
         session_id: str,
         countdown_seconds: float = 3.0,
-        choice_window_seconds: float = 3.0,
+        choice_window_seconds: float = 4.0,
     ) -> None:
         if not session_id or not session_id.strip():
             raise ValueError("session_id cannot be empty.")

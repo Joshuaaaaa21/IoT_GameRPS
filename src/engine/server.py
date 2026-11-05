@@ -84,11 +84,14 @@ class GameRuntimeContext:
         countdown_seconds: float = 3.0,
         token_ttl_seconds: float = 600.0,
         public_base_url: Optional[str] = None,
+        persist_session: bool = True,
     ) -> None:
         self.lock = threading.Lock()
+        self.persist_session = persist_session
         initial_sid = resolve_stable_session_id(
             explicit_session_id=session_id,
             default_session_id=DEFAULT_SESSION_ID,
+            persist=persist_session,
         )
         self.countdown_seconds = countdown_seconds
         self.mqtt_config = MQTTConfig.from_env()
@@ -123,7 +126,8 @@ class GameRuntimeContext:
             old_sid = self.engine.session_id
             self.simulated_players.clear()
             new_sid = custom_session_id.strip() if custom_session_id else old_sid
-            save_persistent_session_id(new_sid)
+            if self.persist_session:
+                save_persistent_session_id(new_sid)
             # Only send LEAVE_SESSION if the session ID is actually changing to a different room.
             # If the session ID remains the same, do NOT kick active players out of the same topic.
             if new_sid != old_sid:

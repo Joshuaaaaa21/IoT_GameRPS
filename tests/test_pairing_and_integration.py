@@ -30,6 +30,14 @@ from src.engine.server import GameRuntimeContext, create_http_handler, public_br
 
 
 class TestPairingAndIntegration(unittest.TestCase):
+    def setUp(self) -> None:
+        from src.engine.pairing import load_persistent_session_id
+        self._orig_session = load_persistent_session_id() or "rps-kelompok12"
+
+    def tearDown(self) -> None:
+        from src.engine.pairing import save_persistent_session_id
+        save_persistent_session_id(self._orig_session)
+
     def test_new_session_keeps_current_session_id_by_default(self) -> None:
         published_actions = []
         ctx = GameRuntimeContext(session_id="rps-kelompok12")

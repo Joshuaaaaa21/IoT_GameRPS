@@ -292,6 +292,14 @@ class EdgeClientMLTests(unittest.TestCase):
 class MQTTStabilityAndRoomPersistenceTests(unittest.TestCase):
     """Test MQTT room identifier and topic persistence across server restarts."""
 
+    def setUp(self):
+        from src.engine.pairing import load_persistent_session_id
+        self._orig_session = load_persistent_session_id() or "rps-kelompok12"
+
+    def tearDown(self):
+        from src.engine.pairing import save_persistent_session_id
+        save_persistent_session_id(self._orig_session)
+
     def test_resolve_stable_session_id_persistence(self):
         from src.engine.pairing import (
             DEFAULT_SESSION_FILE,

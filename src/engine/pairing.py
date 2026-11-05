@@ -444,6 +444,7 @@ def save_persistent_session_id(session_id: str, filepath: str = DEFAULT_SESSION_
 def resolve_stable_session_id(
     explicit_session_id: Optional[str] = None,
     default_session_id: str = "rps-kelompok12",
+    persist: bool = True,
 ) -> str:
     """
     Resolve a stable, persistent session ID following priority:
@@ -455,7 +456,8 @@ def resolve_stable_session_id(
     """
     if explicit_session_id and SAFE_SESSION_REGEX.match(explicit_session_id.strip()):
         sid = explicit_session_id.strip()
-        save_persistent_session_id(sid)
+        if persist:
+            save_persistent_session_id(sid)
         return sid
 
     env_sid = (
@@ -465,7 +467,8 @@ def resolve_stable_session_id(
     )
     if env_sid and SAFE_SESSION_REGEX.match(env_sid.strip()):
         sid = env_sid.strip()
-        save_persistent_session_id(sid)
+        if persist:
+            save_persistent_session_id(sid)
         return sid
 
     persisted = load_persistent_session_id()
@@ -473,7 +476,8 @@ def resolve_stable_session_id(
         return persisted
 
     sid = default_session_id.strip()
-    save_persistent_session_id(sid)
+    if persist:
+        save_persistent_session_id(sid)
     return sid
 
 
